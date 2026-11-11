@@ -12,6 +12,17 @@ type
     procedure Resize; override;
   public
     constructor Create(AOwner: TComponent); override;
+  published
+    property Align;
+    property AlignWithMargins;
+    property Anchors;
+    property Enabled;
+    property Font;
+    property Margins;
+    property Padding;
+    property ParentFont;
+    property TabOrder;
+    property Visible;
   end;
 
 function AddUiCard(const AParent: TWinControl; const AAlign: TAlign; const AHeight, AMargin: Integer): TUiCard;
@@ -52,6 +63,10 @@ constructor TUiCard.Create(AOwner: TComponent);
 begin
   inherited;
   ControlStyle := ControlStyle + [csAcceptsControls, csOpaque];
+  ParentColor := False;
+  Color := clUiCard;
+  Width := 300;
+  Height := 200;
 end;
 
 procedure TUiCard.Paint;

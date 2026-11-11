@@ -22,9 +22,23 @@ type
   public
     constructor Create(AOwner: TComponent); override;
     procedure Click; override;
-    property Checked: Boolean read FChecked write SetChecked;
+  published
+    property Align;
+    property Anchors;
     property Caption;
+    property Checked: Boolean read FChecked write SetChecked default False;
+    property Enabled;
+    property Font;
+    property Hint;
+    property ParentFont;
+    property ParentShowHint;
+    property ShowHint;
+    property TabOrder;
+    property TabStop default True;
+    property Visible;
     property OnClick;
+    property OnEnter;
+    property OnExit;
   end;
 
 function AddUiCheck(const AParent: TWinControl; const ACaption: string; const ALeft, ATop, AWidth, AHeight: Integer): TUiCheck;
@@ -49,6 +63,8 @@ begin
   DoubleBuffered := True;
   TabStop := True;
   Cursor := crHandPoint;
+  Width := 200;
+  Height := 24;
 end;
 
 procedure TUiCheck.Click;

@@ -14,13 +14,18 @@ type
     FPopupOpen: Boolean;
     FPopupClosedAt: Cardinal;
     FPlaceholder: string;
+    FTitle: string;
     FOnChange: TNotifyEvent;
+    procedure SetTitle(const AValue: string);
     procedure CMMouseEnter(var Message: TMessage); message CM_MOUSEENTER;
     procedure CMMouseLeave(var Message: TMessage); message CM_MOUSELEAVE;
     function GetSelectedObject: TObject;
     procedure SetSelectedObject(const AValue: TObject);
     procedure SetItemIndex(const AValue: Integer);
-    function GetItem(const AIndex: Integer): string;
+    procedure SetItems(const AValue: TStrings);
+    function GetItems: TStrings;
+    procedure ItemsChanged(Sender: TObject);
+    function IsPlaceholderStored: Boolean;
     function GetObject(const AIndex: Integer): TObject;
     procedure OpenPopup;
     procedure PickItem(const AIndex: Integer);
@@ -37,8 +42,6 @@ type
     procedure AddItem(const ACaption: string; const AObject: TObject = nil);
     function Count: Integer;
     function IndexOfObject(const AObject: TObject): Integer;
-    property ItemIndex: Integer read FItemIndex write SetItemIndex;
-    property Items[const AIndex: Integer]: string read GetItem;
     property Objects[const AIndex: Integer]: TObject read GetObject;
     property SelectedObject: TObject read GetSelectedObject write SetSelectedObject;
   published
@@ -47,12 +50,15 @@ type
     property Enabled;
     property Font;
     property Hint;
+    property Items: TStrings read GetItems write SetItems;
+    property ItemIndex: Integer read FItemIndex write SetItemIndex default -1;
     property ParentFont;
     property ParentShowHint;
-    property Placeholder: string read FPlaceholder write FPlaceholder;
+    property Placeholder: string read FPlaceholder write FPlaceholder stored IsPlaceholderStored;
     property ShowHint;
     property TabOrder;
     property TabStop default True;
+    property Title: string read FTitle write SetTitle;
     property Visible;
     property OnChange: TNotifyEvent read FOnChange write FOnChange;
   end;
@@ -63,6 +69,9 @@ implementation
 
 uses
   Forms, Math, System.Types, System.UITypes, Winapi.GDIPAPI, Winapi.GDIPOBJ, uUiTheme, uUiPaint, uUiCard, uUiPopup;
+
+const
+  cUiSelectPlaceholder = 'Не выбрано';
 
 type
   TUiSelectPopup = class(TUiPopup)
@@ -184,9 +193,12 @@ begin
   DoubleBuffered := True;
   TabStop := True;
   Cursor := crHandPoint;
+  Width := 200;
+  Height := 34;
   FItems := TStringList.Create;
+  FItems.OnChange := ItemsChanged;
   FItemIndex := -1;
-  FPlaceholder := 'Не выбрано';
+  FPlaceholder := cUiSelectPlaceholder;
 end;
 
 destructor TUiSelect.Destroy;
@@ -198,14 +210,39 @@ end;
 procedure TUiSelect.ClearItems;
 begin
   FItems.Clear;
-  FItemIndex := -1;
-  Invalidate;
 end;
 
 procedure TUiSelect.AddItem(const ACaption: string; const AObject: TObject);
 begin
   FItems.AddObject(ACaption, AObject);
+end;
+
+function TUiSelect.GetItems: TStrings;
+begin
+  Result := FItems;
+end;
+
+procedure TUiSelect.SetItems(const AValue: TStrings);
+begin
+  FItems.Assign(AValue);
+end;
+
+procedure TUiSelect.ItemsChanged(Sender: TObject);
+begin
+  if FItemIndex >= FItems.Count then
+    FItemIndex := -1;
   Invalidate;
+end;
+
+procedure TUiSelect.SetTitle(const AValue: string);
+begin
+  ChangeTitle(Self, Font, FTitle, AValue);
+  Invalidate;
+end;
+
+function TUiSelect.IsPlaceholderStored: Boolean;
+begin
+  Result := FPlaceholder <> cUiSelectPlaceholder;
 end;
 
 function TUiSelect.Count: Integer;
@@ -216,11 +253,6 @@ end;
 function TUiSelect.IndexOfObject(const AObject: TObject): Integer;
 begin
   Result := FItems.IndexOfObject(AObject);
-end;
-
-function TUiSelect.GetItem(const AIndex: Integer): string;
-begin
-  Result := FItems[AIndex];
 end;
 
 function TUiSelect.GetObject(const AIndex: Integer): TObject;
@@ -320,7 +352,7 @@ var
   vBorder, vFill: TColor;
   vTextRect: TRect;
   vText: string;
-  vArrowX, vArrowY, vArrowSize: Integer;
+  vArrowX, vArrowY, vArrowSize, vTop: Integer;
   vGraphics: TGPGraphics;
   vPen: TGPPen;
 begin
@@ -335,7 +367,9 @@ begin
     vFill := clUiHover
   else
     vFill := clUiCard;
-  DrawRounded(Canvas, ClientRect, ScaleValue(6), vFill, vBorder);
+  vTop := TitleHeight(Self, FTitle, Font);
+  DrawTitle(Canvas, Self, FTitle, Font);
+  DrawRounded(Canvas, Rect(0, vTop, Width, Height), ScaleValue(6), vFill, vBorder);
 
   Canvas.Font.Assign(Font);
   Canvas.Brush.Style := bsClear;
@@ -349,12 +383,12 @@ begin
     vText := FPlaceholder;
     Canvas.Font.Color := clUiMuted;
   end;
-  vTextRect := Rect(ScaleValue(10), 0, Width - ScaleValue(28), Height);
+  vTextRect := Rect(ScaleValue(10), vTop, Width - ScaleValue(28), Height);
   Canvas.TextRect(vTextRect, vText, [tfLeft, tfVerticalCenter, tfSingleLine, tfNoPrefix, tfEndEllipsis]);
 
   vArrowSize := ScaleValue(4);
   vArrowX := Width - ScaleValue(16);
-  vArrowY := Height div 2 - vArrowSize div 2;
+  vArrowY := (vTop + Height) div 2 - vArrowSize div 2;
   vGraphics := TGPGraphics.Create(Canvas.Handle);
   vPen := TGPPen.Create(ToGpColor(clUiMuted), ScaleValue(2));
   try

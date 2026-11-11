@@ -16,13 +16,79 @@ procedure DrawRounded(const ACanvas: TCanvas; const ARect: TRect; const ARadius:
   const AFill, ABorder: TColor; const ABorderWidth: Integer = 1);
 procedure DrawCheckMark(const ACanvas: TCanvas; const ARect: TRect; const AColor: TColor; const AWidth: Integer);
 function FieldInnerRect(const AControl: TWinControl): TRect;
-procedure DrawFieldFrame(const AControl: TWinControl; const ASurface, AFill, ABorder: TColor; const ARadius: Integer);
+procedure DrawFieldFrame(const AControl: TWinControl; const ASurface, AFill, ABorder: TColor; const ARadius: Integer;
+  const ATitle: string = ''; const AFont: TFont = nil);
 procedure RedrawFrame(const AControl: TWinControl);
+function TitleHeight(const AControl: TControl; const ATitle: string; const AFont: TFont): Integer;
+procedure DrawTitle(const ACanvas: TCanvas; const AControl: TControl; const ATitle: string; const AFont: TFont);
+procedure ChangeTitle(const AControl: TControl; const AFont: TFont; var ATitle: string; const AValue: string);
 
 implementation
 
 uses
-  System.Types, Winapi.GDIPAPI, Winapi.GDIPOBJ;
+  System.Types, Winapi.GDIPAPI, Winapi.GDIPOBJ, Classes, Math, uUiTheme;
+
+procedure AssignTitleFont(const ATarget, ASource: TFont);
+begin
+  ATarget.Assign(ASource);
+  ATarget.Name := cUiFontName;
+  ATarget.Size := Max(1, ASource.Size - 1);
+  ATarget.Style := [];
+  ATarget.Color := clUiMuted;
+end;
+
+function TitleHeight(const AControl: TControl; const ATitle: string; const AFont: TFont): Integer;
+var
+  vFont: TFont;
+  vDC: HDC;
+  vOldFont: HGDIOBJ;
+  vMetrics: TTextMetric;
+begin
+  if ATitle = '' then
+    Exit(0);
+  vFont := TFont.Create;
+  try
+    AssignTitleFont(vFont, AFont);
+    vDC := GetDC(0);
+    try
+      vOldFont := SelectObject(vDC, vFont.Handle);
+      GetTextMetrics(vDC, vMetrics);
+      SelectObject(vDC, vOldFont);
+    finally
+      ReleaseDC(0, vDC);
+    end;
+  finally
+    vFont.Free;
+  end;
+  Result := vMetrics.tmHeight + AControl.ScaleValue(4);
+end;
+
+procedure DrawTitle(const ACanvas: TCanvas; const AControl: TControl; const ATitle: string; const AFont: TFont);
+var
+  vRect: TRect;
+  vText: string;
+begin
+  if ATitle = '' then
+    Exit;
+  AssignTitleFont(ACanvas.Font, AFont);
+  ACanvas.Brush.Style := bsClear;
+  vRect := Rect(0, 0, AControl.Width, TitleHeight(AControl, ATitle, AFont));
+  vText := ATitle;
+  ACanvas.TextRect(vRect, vText, [tfLeft, tfTop, tfSingleLine, tfNoPrefix, tfEndEllipsis]);
+  ACanvas.Brush.Style := bsSolid;
+end;
+
+procedure ChangeTitle(const AControl: TControl; const AFont: TFont; var ATitle: string; const AValue: string);
+var
+  vOldHeight: Integer;
+begin
+  if ATitle = AValue then
+    Exit;
+  vOldHeight := TitleHeight(AControl, ATitle, AFont);
+  ATitle := AValue;
+  if not (csLoading in AControl.ComponentState) then
+    AControl.Height := AControl.Height + TitleHeight(AControl, ATitle, AFont) - vOldHeight;
+end;
 
 function ToGpColor(const AColor: TColor): Cardinal;
 var
@@ -124,7 +190,8 @@ begin
     Inc(Result.Bottom, GetSystemMetrics(SM_CYHSCROLL));
 end;
 
-procedure DrawFieldFrame(const AControl: TWinControl; const ASurface, AFill, ABorder: TColor; const ARadius: Integer);
+procedure DrawFieldFrame(const AControl: TWinControl; const ASurface, AFill, ABorder: TColor; const ARadius: Integer;
+  const ATitle: string; const AFont: TFont);
 var
   vDC: HDC;
   vCanvas: TCanvas;
@@ -142,6 +209,11 @@ begin
       vCanvas.Brush.Style := bsSolid;
       vCanvas.Brush.Color := ASurface;
       vCanvas.FillRect(vRect);
+      if ATitle <> '' then
+      begin
+        DrawTitle(vCanvas, AControl, ATitle, AFont);
+        vRect.Top := TitleHeight(AControl, ATitle, AFont);
+      end;
       DrawRounded(vCanvas, vRect, ARadius, AFill, ABorder);
     finally
       vCanvas.Handle := 0;

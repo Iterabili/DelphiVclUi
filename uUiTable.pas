@@ -98,10 +98,11 @@ type
     FSettingSelection: Boolean;
     FHover: TObject;
     FRowHeight: Integer;
+    FRowHeightSetting: Integer;
     FRowPadding: Integer;
-    FAutoRowHeight: Boolean;
     FHeaderHeight: Integer;
     FScrollBarSize: Integer;
+    FScrollBarSetting: Integer;
     FScrollX: Integer;
     FScrollY: Integer;
     FNeedV: Boolean;
@@ -141,10 +142,8 @@ type
     procedure SourceSelectionChanged;
     procedure SetRowHeight(const AValue: Integer);
     procedure SetRowPadding(const AValue: Integer);
-    procedure ApplyRowHeight(const AValue: Integer);
-    procedure UpdateAutoRowHeight;
+    procedure UpdateSizes;
     procedure CMFontChanged(var Message: TMessage); message CM_FONTCHANGED;
-    procedure SetHeaderHeight(const AValue: Integer);
     procedure SetScrollBarSize(const AValue: Integer);
     procedure UpdateLayout;
     procedure SetScroll(const AX, AY: Integer);
@@ -180,6 +179,7 @@ type
     procedure CMWantSpecialKey(var Message: TCMWantSpecialKey); message CM_WANTSPECIALKEY;
   protected
     procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+    procedure ChangeScale(M, D: Integer; isDpiChange: Boolean); override;
     procedure Paint; override;
     procedure Resize; override;
     procedure CreateWnd; override;
@@ -209,26 +209,44 @@ type
     property Source: TUiTableSource read FSource write SetSource;
     property SelectedItem: TObject read GetSelected write SetSelected;
     property FocusedItem: TObject read FFocused;
-    property MultiSelect: Boolean read FMultiSelect write SetMultiSelect;
-    property AllowDeselect: Boolean read FAllowDeselect write FAllowDeselect;
-    property RowHeight: Integer read FRowHeight write SetRowHeight;
-    property RowPadding: Integer read FRowPadding write SetRowPadding;
-    property HeaderHeight: Integer read FHeaderHeight write SetHeaderHeight;
-    property ScrollBarSize: Integer read FScrollBarSize write SetScrollBarSize;
-    property EmptyText: string read FEmptyText write FEmptyText;
+    property HeaderHeight: Integer read FHeaderHeight;
     property RowColor: TUiTableColorFunc read FRowColor write FRowColor;
-    property Images: TCustomImageList read FImages write SetImages;
-    property OnCellClick: TUiTableCellEvent read FOnCellClick write FOnCellClick;
-    property OnSelect: TNotifyEvent read FOnSelect write FOnSelect;
-    property OnHeaderClick: TUiTableColumnEvent read FOnHeaderClick write FOnHeaderClick;
+  published
+    property Align;
+    property AllowDeselect: Boolean read FAllowDeselect write FAllowDeselect default False;
+    property Anchors;
+    property DragMode;
+    property EmptyText: string read FEmptyText write FEmptyText;
+    property Enabled;
     property Font;
+    property Hint;
+    property Images: TCustomImageList read FImages write SetImages;
+    property MultiSelect: Boolean read FMultiSelect write SetMultiSelect default False;
+    property ParentFont;
+    property ParentShowHint;
+    property PopupMenu;
+    property RowHeight: Integer read FRowHeightSetting write SetRowHeight default 0;
+    property RowPadding: Integer read FRowPadding write SetRowPadding default 6;
+    property ScrollBarSize: Integer read FScrollBarSetting write SetScrollBarSize default 10;
+    property ShowHint;
+    property TabOrder;
+    property TabStop default True;
+    property Visible;
+    property OnCellClick: TUiTableCellEvent read FOnCellClick write FOnCellClick;
+    property OnContextPopup;
     property OnDblClick;
+    property OnDragDrop;
+    property OnDragOver;
+    property OnEndDrag;
+    property OnEnter;
+    property OnExit;
+    property OnHeaderClick: TUiTableColumnEvent read FOnHeaderClick write FOnHeaderClick;
+    property OnKeyDown;
     property OnMouseDown;
     property OnMouseMove;
-    property OnDragOver;
-    property OnDragDrop;
+    property OnMouseUp;
+    property OnSelect: TNotifyEvent read FOnSelect write FOnSelect;
     property OnStartDrag;
-    property OnEndDrag;
   end;
 
 function AddUiTable(const AParent: TWinControl): TUiTable;
@@ -455,11 +473,10 @@ begin
   inherited;
   ControlStyle := ControlStyle + [csOpaque];
   FColumns := TObjectList<TUiTableColumn>.Create(True);
+  Width := 300;
+  Height := 200;
   FRowPadding := 6;
-  FAutoRowHeight := True;
-  FRowHeight := ScaleValue(32);
-  FHeaderHeight := FRowHeight;
-  FScrollBarSize := ScaleValue(10);
+  FScrollBarSetting := 10;
   FCacheFirst := -1;
   FDownColumn := -1;
   FDownCellColumn := -1;
@@ -467,7 +484,7 @@ begin
   TabStop := True;
   DoubleBuffered := True;
   Color := clUiCard;
-  UpdateAutoRowHeight;
+  UpdateSizes;
 end;
 
 destructor TUiTable.Destroy;
@@ -709,63 +726,59 @@ end;
 
 procedure TUiTable.SetRowHeight(const AValue: Integer);
 begin
-  FAutoRowHeight := False;
-  ApplyRowHeight(AValue);
+  FRowHeightSetting := Max(0, AValue);
+  UpdateSizes;
 end;
 
 procedure TUiTable.SetRowPadding(const AValue: Integer);
 begin
   FRowPadding := Max(0, AValue);
-  FAutoRowHeight := True;
-  UpdateAutoRowHeight;
+  UpdateSizes;
 end;
 
-procedure TUiTable.ApplyRowHeight(const AValue: Integer);
+procedure TUiTable.SetScrollBarSize(const AValue: Integer);
 begin
-  FRowHeight := Max(1, AValue);
-  FHeaderHeight := FRowHeight;
-  FCacheValid := False;
-  UpdateLayout;
-  Invalidate;
+  FScrollBarSetting := Max(1, AValue);
+  UpdateSizes;
 end;
 
-procedure TUiTable.UpdateAutoRowHeight;
+procedure TUiTable.UpdateSizes;
 var
   vDC: HDC;
   vOldFont: HGDIOBJ;
   vMetrics: TTextMetric;
 begin
-  if not FAutoRowHeight then
-    Exit;
-  vDC := GetDC(0);
-  try
-    vOldFont := SelectObject(vDC, Font.Handle);
-    GetTextMetrics(vDC, vMetrics);
-    SelectObject(vDC, vOldFont);
-  finally
-    ReleaseDC(0, vDC);
+  if FRowHeightSetting > 0 then
+    FRowHeight := ScaleValue(FRowHeightSetting)
+  else
+  begin
+    vDC := GetDC(0);
+    try
+      vOldFont := SelectObject(vDC, Font.Handle);
+      GetTextMetrics(vDC, vMetrics);
+      SelectObject(vDC, vOldFont);
+    finally
+      ReleaseDC(0, vDC);
+    end;
+    FRowHeight := Max(1, vMetrics.tmHeight + 2 * ScaleValue(FRowPadding));
   end;
-  ApplyRowHeight(vMetrics.tmHeight + 2 * ScaleValue(FRowPadding));
+  FHeaderHeight := FRowHeight;
+  FScrollBarSize := ScaleValue(FScrollBarSetting);
+  FCacheValid := False;
+  UpdateLayout;
+  Invalidate;
 end;
 
 procedure TUiTable.CMFontChanged(var Message: TMessage);
 begin
   inherited;
-  UpdateAutoRowHeight;
+  UpdateSizes;
 end;
 
-procedure TUiTable.SetHeaderHeight(const AValue: Integer);
+procedure TUiTable.ChangeScale(M, D: Integer; isDpiChange: Boolean);
 begin
-  FHeaderHeight := Max(0, AValue);
-  UpdateLayout;
-  Invalidate;
-end;
-
-procedure TUiTable.SetScrollBarSize(const AValue: Integer);
-begin
-  FScrollBarSize := Max(1, AValue);
-  UpdateLayout;
-  Invalidate;
+  inherited;
+  UpdateSizes;
 end;
 
 function TUiTable.DataRect: TRect;

@@ -12,7 +12,9 @@ type
     FHover: Boolean;
     FPopupOpen: Boolean;
     FPopupClosedAt: Cardinal;
+    FTitle: string;
     FOnChange: TNotifyEvent;
+    procedure SetTitle(const AValue: string);
     procedure CMMouseEnter(var Message: TMessage); message CM_MOUSEENTER;
     procedure CMMouseLeave(var Message: TMessage); message CM_MOUSELEAVE;
     procedure SetDate(const AValue: TDateTime);
@@ -26,7 +28,22 @@ type
   public
     constructor Create(AOwner: TComponent); override;
     property Date: TDateTime read FDate write SetDate;
+  published
+    property Align;
+    property Anchors;
+    property Enabled;
+    property Font;
+    property Hint;
+    property ParentFont;
+    property ParentShowHint;
+    property ShowHint;
+    property TabOrder;
+    property TabStop default True;
+    property Title: string read FTitle write SetTitle;
+    property Visible;
     property OnChange: TNotifyEvent read FOnChange write FOnChange;
+    property OnEnter;
+    property OnExit;
   end;
 
 function AddUiDatePicker(const AParent: TWinControl; const ALeft, ATop, AWidth, AHeight: Integer): TUiDatePicker;
@@ -113,7 +130,15 @@ begin
   DoubleBuffered := True;
   TabStop := True;
   Cursor := crHandPoint;
+  Width := 160;
+  Height := 34;
   FDate := Trunc(Now);
+end;
+
+procedure TUiDatePicker.SetTitle(const AValue: string);
+begin
+  ChangeTitle(Self, Font, FTitle, AValue);
+  Invalidate;
 end;
 
 procedure TUiDatePicker.SetDate(const AValue: TDateTime);
@@ -190,7 +215,7 @@ var
   vBorder, vFill: TColor;
   vTextRect: TRect;
   vText: string;
-  vArrowX, vArrowY, vArrowSize: Integer;
+  vArrowX, vArrowY, vArrowSize, vTop: Integer;
   vGraphics: TGPGraphics;
   vPen: TGPPen;
 begin
@@ -205,12 +230,14 @@ begin
     vFill := clUiHover
   else
     vFill := clUiCard;
-  DrawRounded(Canvas, ClientRect, ScaleValue(6), vFill, vBorder);
+  vTop := TitleHeight(Self, FTitle, Font);
+  DrawTitle(Canvas, Self, FTitle, Font);
+  DrawRounded(Canvas, Rect(0, vTop, Width, Height), ScaleValue(6), vFill, vBorder);
 
   Canvas.Font.Assign(Font);
   Canvas.Font.Color := clUiText;
   Canvas.Brush.Style := bsClear;
-  vTextRect := Rect(ScaleValue(10), 0, Width - ScaleValue(28), Height);
+  vTextRect := Rect(ScaleValue(10), vTop, Width - ScaleValue(28), Height);
   if FDate > 0 then
     vText := FormatDateTime('dd.mm.yyyy', FDate)
   else
@@ -222,7 +249,7 @@ begin
 
   vArrowSize := ScaleValue(4);
   vArrowX := Width - ScaleValue(16);
-  vArrowY := Height div 2 - vArrowSize div 2;
+  vArrowY := (vTop + Height) div 2 - vArrowSize div 2;
   vGraphics := TGPGraphics.Create(Canvas.Handle);
   vPen := TGPPen.Create(ToGpColor(clUiMuted), ScaleValue(2));
   try

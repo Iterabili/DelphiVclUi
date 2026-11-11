@@ -8,6 +8,10 @@ uses
 type
   TUiMemo = class(TCustomMemo)
   private
+    FTitle: string;
+    procedure SetTitle(const AValue: string);
+    procedure CMFontChanged(var Message: TMessage); message CM_FONTCHANGED;
+    procedure FrameChanged;
     procedure WMNCCalcSize(var Message: TWMNCCalcSize); message WM_NCCALCSIZE;
     procedure WMNCPaint(var Message: TWMNCPaint); message WM_NCPAINT;
     procedure WMNCHitTest(var Message: TWMNCHitTest); message WM_NCHITTEST;
@@ -31,11 +35,12 @@ type
     property ParentFont;
     property ParentShowHint;
     property ReadOnly;
-    property ScrollBars;
+    property ScrollBars default ssVertical;
     property ShowHint;
     property TabOrder;
     property TabStop;
     property Text;
+    property Title: string read FTitle write SetTitle;
     property Visible;
     property WantReturns;
     property WantTabs;
@@ -71,6 +76,8 @@ begin
   ParentColor := False;
   Color := clUiCard;
   ScrollBars := ssVertical;
+  Width := 200;
+  Height := 90;
 end;
 
 procedure TUiMemo.WMNCCalcSize(var Message: TWMNCCalcSize);
@@ -81,7 +88,7 @@ begin
   vRect := @Message.CalcSize_Params^.rgrc[0];
   vPadding := ScaleValue(6);
   Inc(vRect^.Left, ScaleValue(10));
-  Inc(vRect^.Top, vPadding);
+  Inc(vRect^.Top, TitleHeight(Self, FTitle, Font) + vPadding);
   Dec(vRect^.Right, vPadding);
   Dec(vRect^.Bottom, vPadding);
   inherited;
@@ -96,7 +103,26 @@ begin
     vBorder := clUiAccent
   else
     vBorder := clUiBorder;
-  DrawFieldFrame(Self, SurfaceOf(Self), Color, vBorder, ScaleValue(6));
+  DrawFieldFrame(Self, SurfaceOf(Self), Color, vBorder, ScaleValue(6), FTitle, Font);
+end;
+
+procedure TUiMemo.SetTitle(const AValue: string);
+begin
+  ChangeTitle(Self, Font, FTitle, AValue);
+  FrameChanged;
+end;
+
+procedure TUiMemo.CMFontChanged(var Message: TMessage);
+begin
+  inherited;
+  FrameChanged;
+end;
+
+procedure TUiMemo.FrameChanged;
+begin
+  if HandleAllocated then
+    SetWindowPos(Handle, 0, 0, 0, 0, 0, SWP_FRAMECHANGED or SWP_NOMOVE or SWP_NOSIZE or SWP_NOZORDER or
+      SWP_NOACTIVATE);
 end;
 
 procedure TUiMemo.WMNCHitTest(var Message: TWMNCHitTest);
