@@ -3,32 +3,51 @@
 interface
 
 uses
-  Windows, Messages, SysUtils, Classes, Graphics, Controls, StdCtrls, Forms;
+  Windows, Messages, SysUtils, Classes, Graphics, Controls, StdCtrls, Forms, uUiTheme;
 
 type
-  TUiEdit = class(TCustomControl)
+  TUiEdit = class(TCustomEdit)
   private
-    FEdit: TEdit;
-    FFocused: Boolean;
-    function GetText: string;
-    procedure SetText(const AValue: string);
-    function GetOnChange: TNotifyEvent;
-    procedure SetOnChange(const AValue: TNotifyEvent);
-    function GetPasswordChar: Char;
-    procedure SetPasswordChar(const AValue: Char);
-    procedure EditEnter(Sender: TObject);
-    procedure EditExit(Sender: TObject);
-    procedure LayoutEdit;
+    function FontHeight: Integer;
+    procedure WMNCCalcSize(var Message: TWMNCCalcSize); message WM_NCCALCSIZE;
+    procedure WMNCPaint(var Message: TWMNCPaint); message WM_NCPAINT;
+    procedure WMNCHitTest(var Message: TWMNCHitTest); message WM_NCHITTEST;
+    procedure CMFontChanged(var Message: TMessage); message CM_FONTCHANGED;
+    procedure CMEnabledChanged(var Message: TMessage); message CM_ENABLEDCHANGED;
+    procedure CMColorChanged(var Message: TMessage); message CM_COLORCHANGED;
   protected
-    procedure Paint; override;
-    procedure Resize; override;
-    procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); override;
+    procedure DoEnter; override;
+    procedure DoExit; override;
   public
     constructor Create(AOwner: TComponent); override;
-    procedure Focus;
-    property Text: string read GetText write SetText;
-    property OnChange: TNotifyEvent read GetOnChange write SetOnChange;
-    property PasswordChar: Char read GetPasswordChar write SetPasswordChar;
+  published
+    property Align;
+    property Alignment;
+    property Anchors;
+    property Color default clUiCard;
+    property Enabled;
+    property Font;
+    property Hint;
+    property MaxLength;
+    property NumbersOnly;
+    property ParentFont;
+    property ParentShowHint;
+    property PasswordChar;
+    property ReadOnly;
+    property ShowHint;
+    property TabOrder;
+    property TabStop;
+    property Text;
+    property TextHint;
+    property Visible;
+    property OnChange;
+    property OnClick;
+    property OnDblClick;
+    property OnEnter;
+    property OnExit;
+    property OnKeyDown;
+    property OnKeyPress;
+    property OnKeyUp;
   end;
 
 function AddUiEdit(const AParent: TWinControl; const ALeft, ATop, AWidth, AHeight: Integer): TUiEdit;
@@ -36,7 +55,7 @@ function AddUiEdit(const AParent: TWinControl; const ALeft, ATop, AWidth, AHeigh
 implementation
 
 uses
-  Math, System.Types, System.UITypes, uUiTheme, uUiPaint, uUiCard;
+  Math, System.Types, System.UITypes, uUiPaint, uUiCard;
 
 function AddUiEdit(const AParent: TWinControl; const ALeft, ATop, AWidth, AHeight: Integer): TUiEdit;
 begin
@@ -48,98 +67,90 @@ end;
 constructor TUiEdit.Create(AOwner: TComponent);
 begin
   inherited;
-  ControlStyle := ControlStyle + [csAcceptsControls, csOpaque];
-  Cursor := crIBeam;
-  FEdit := TEdit.Create(Self);
-  FEdit.Parent := Self;
-  FEdit.BorderStyle := bsNone;
-  FEdit.Color := clUiCard;
-  FEdit.OnEnter := EditEnter;
-  FEdit.OnExit := EditExit;
+  AutoSize := False;
+  BorderStyle := bsNone;
+  ParentColor := False;
+  Color := clUiCard;
 end;
 
-function TUiEdit.GetText: string;
-begin
-  Result := FEdit.Text;
-end;
-
-procedure TUiEdit.SetText(const AValue: string);
-begin
-  FEdit.Text := AValue;
-end;
-
-function TUiEdit.GetOnChange: TNotifyEvent;
-begin
-  Result := FEdit.OnChange;
-end;
-
-procedure TUiEdit.SetOnChange(const AValue: TNotifyEvent);
-begin
-  FEdit.OnChange := AValue;
-end;
-
-function TUiEdit.GetPasswordChar: Char;
-begin
-  Result := FEdit.PasswordChar;
-end;
-
-procedure TUiEdit.SetPasswordChar(const AValue: Char);
-begin
-  FEdit.PasswordChar := AValue;
-end;
-
-procedure TUiEdit.EditEnter(Sender: TObject);
-begin
-  FFocused := True;
-  Invalidate;
-end;
-
-procedure TUiEdit.EditExit(Sender: TObject);
-begin
-  FFocused := False;
-  Invalidate;
-end;
-
-procedure TUiEdit.Focus;
-begin
-  if FEdit.CanFocus then
-    FEdit.SetFocus;
-end;
-
-procedure TUiEdit.LayoutEdit;
+function TUiEdit.FontHeight: Integer;
 var
-  vPadding: Integer;
+  vDC: HDC;
+  vOldFont: HFONT;
+  vMetrics: TTextMetric;
 begin
-  vPadding := ScaleValue(10);
-  FEdit.SetBounds(vPadding, (ClientHeight - FEdit.Height) div 2, ClientWidth - vPadding * 2, FEdit.Height);
+  vDC := GetDC(0);
+  try
+    vOldFont := SelectObject(vDC, Font.Handle);
+    GetTextMetrics(vDC, vMetrics);
+    SelectObject(vDC, vOldFont);
+  finally
+    ReleaseDC(0, vDC);
+  end;
+  Result := vMetrics.tmHeight;
 end;
 
-procedure TUiEdit.Resize;
+procedure TUiEdit.WMNCCalcSize(var Message: TWMNCCalcSize);
+var
+  vRect: PRect;
+  vPaddingX, vPaddingY: Integer;
 begin
+  vRect := @Message.CalcSize_Params^.rgrc[0];
+  vPaddingX := ScaleValue(10);
+  vPaddingY := Max(ScaleValue(2), (vRect^.Bottom - vRect^.Top - FontHeight) div 2);
+  InflateRect(vRect^, -vPaddingX, -vPaddingY);
   inherited;
-  LayoutEdit;
-  Invalidate;
 end;
 
-procedure TUiEdit.MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
-begin
-  Focus;
-  inherited;
-end;
-
-procedure TUiEdit.Paint;
+procedure TUiEdit.WMNCPaint(var Message: TWMNCPaint);
 var
   vBorder: TColor;
 begin
-  LayoutEdit;
-  Canvas.Brush.Style := bsSolid;
-  Canvas.Brush.Color := SurfaceOf(Self);
-  Canvas.FillRect(ClientRect);
-  if FFocused then
+  if Focused then
     vBorder := clUiAccent
   else
     vBorder := clUiBorder;
-  DrawRounded(Canvas, ClientRect, ScaleValue(6), clUiCard, vBorder);
+  DrawFieldFrame(Self, SurfaceOf(Self), Color, vBorder, ScaleValue(6));
+  Message.Result := 0;
+end;
+
+procedure TUiEdit.WMNCHitTest(var Message: TWMNCHitTest);
+begin
+  inherited;
+  if (Message.Result = HTNOWHERE) or (Message.Result = HTBORDER) then
+    Message.Result := HTCLIENT;
+end;
+
+procedure TUiEdit.CMFontChanged(var Message: TMessage);
+begin
+  inherited;
+  if HandleAllocated then
+    SetWindowPos(Handle, 0, 0, 0, 0, 0, SWP_FRAMECHANGED or SWP_NOMOVE or SWP_NOSIZE or SWP_NOZORDER or
+      SWP_NOACTIVATE);
+end;
+
+procedure TUiEdit.CMEnabledChanged(var Message: TMessage);
+begin
+  inherited;
+  RedrawFrame(Self);
+end;
+
+procedure TUiEdit.CMColorChanged(var Message: TMessage);
+begin
+  inherited;
+  RedrawFrame(Self);
+end;
+
+procedure TUiEdit.DoEnter;
+begin
+  inherited;
+  RedrawFrame(Self);
+end;
+
+procedure TUiEdit.DoExit;
+begin
+  inherited;
+  RedrawFrame(Self);
 end;
 
 end.

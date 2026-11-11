@@ -19,6 +19,9 @@ type
     procedure CMMouseLeave(var Message: TMessage); message CM_MOUSELEAVE;
     function GetSelectedObject: TObject;
     procedure SetSelectedObject(const AValue: TObject);
+    procedure SetItemIndex(const AValue: Integer);
+    function GetItem(const AIndex: Integer): string;
+    function GetObject(const AIndex: Integer): TObject;
     procedure OpenPopup;
     procedure PickItem(const AIndex: Integer);
   protected
@@ -31,9 +34,26 @@ type
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     procedure ClearItems;
-    procedure AddItem(const ACaption: string; const AObject: TObject);
+    procedure AddItem(const ACaption: string; const AObject: TObject = nil);
+    function Count: Integer;
+    function IndexOfObject(const AObject: TObject): Integer;
+    property ItemIndex: Integer read FItemIndex write SetItemIndex;
+    property Items[const AIndex: Integer]: string read GetItem;
+    property Objects[const AIndex: Integer]: TObject read GetObject;
     property SelectedObject: TObject read GetSelectedObject write SetSelectedObject;
+  published
+    property Align;
+    property Anchors;
+    property Enabled;
+    property Font;
+    property Hint;
+    property ParentFont;
+    property ParentShowHint;
     property Placeholder: string read FPlaceholder write FPlaceholder;
+    property ShowHint;
+    property TabOrder;
+    property TabStop default True;
+    property Visible;
     property OnChange: TNotifyEvent read FOnChange write FOnChange;
   end;
 
@@ -185,6 +205,35 @@ end;
 procedure TUiSelect.AddItem(const ACaption: string; const AObject: TObject);
 begin
   FItems.AddObject(ACaption, AObject);
+  Invalidate;
+end;
+
+function TUiSelect.Count: Integer;
+begin
+  Result := FItems.Count;
+end;
+
+function TUiSelect.IndexOfObject(const AObject: TObject): Integer;
+begin
+  Result := FItems.IndexOfObject(AObject);
+end;
+
+function TUiSelect.GetItem(const AIndex: Integer): string;
+begin
+  Result := FItems[AIndex];
+end;
+
+function TUiSelect.GetObject(const AIndex: Integer): TObject;
+begin
+  Result := FItems.Objects[AIndex];
+end;
+
+procedure TUiSelect.SetItemIndex(const AValue: Integer);
+begin
+  if (AValue >= 0) and (AValue < FItems.Count) then
+    FItemIndex := AValue
+  else
+    FItemIndex := -1;
   Invalidate;
 end;
 

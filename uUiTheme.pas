@@ -16,6 +16,7 @@ const
   clUiAccentPressed = TColor($0012349A);
   clUiHover = TColor($00F7F4F2);
   clUiSelection = TColor($00E8F1FF);
+  clUiRowSelected = TColor($00C8DCFF);
   clUiPressed = TColor($00ECE7E4);
   clUiDanger = TColor($001823B4);
   clUiDangerHover = TColor($00F2F3FE);
@@ -26,6 +27,8 @@ const
   clUiSuccess = TColor($003D8015);
   clUiScrollThumb = TColor($00D6CFC9);
   clUiScrollThumbHot = TColor($00A99D95);
+  clUiTableHeader = TColor($00F3EFEC);
+  clUiTableHeaderDivider = TColor($00C2B8B1);
   cUiFontName = 'Segoe UI';
   cUiFontSemibold = 'Segoe UI Semibold';
   cUiFontMono = 'Consolas';

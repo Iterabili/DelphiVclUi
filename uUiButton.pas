@@ -3,7 +3,7 @@
 interface
 
 uses
-  Windows, Messages, SysUtils, Classes, Graphics, Controls;
+  Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms;
 
 type
   TUiButtonKind = (ubkPrimary, ubkSecondary, ubkDanger);
@@ -14,11 +14,18 @@ type
     FHover: Boolean;
     FPressed: Boolean;
     FMouseFocus: Boolean;
+    FModalResult: TModalResult;
+    FDefault: Boolean;
+    FCancel: Boolean;
+    FActive: Boolean;
     procedure CMMouseEnter(var Message: TMessage); message CM_MOUSEENTER;
     procedure CMMouseLeave(var Message: TMessage); message CM_MOUSELEAVE;
     procedure CMEnabledChanged(var Message: TMessage); message CM_ENABLEDCHANGED;
     procedure CMTextChanged(var Message: TMessage); message CM_TEXTCHANGED;
+    procedure CMDialogKey(var Message: TCMDialogKey); message CM_DIALOGKEY;
+    procedure CMFocusChanged(var Message: TCMFocusChanged); message CM_FOCUSCHANGED;
     procedure SetKind(const AValue: TUiButtonKind);
+    procedure SetDefault(const AValue: Boolean);
   protected
     procedure Paint; override;
     procedure DoEnter; override;
@@ -29,8 +36,23 @@ type
   public
     constructor Create(AOwner: TComponent); override;
     procedure Click; override;
-    property Kind: TUiButtonKind read FKind write SetKind;
+  published
+    property Align;
+    property Anchors;
+    property Cancel: Boolean read FCancel write FCancel default False;
     property Caption;
+    property Default: Boolean read FDefault write SetDefault default False;
+    property Enabled;
+    property Font;
+    property Hint;
+    property Kind: TUiButtonKind read FKind write SetKind default ubkSecondary;
+    property ModalResult: TModalResult read FModalResult write FModalResult default mrNone;
+    property ParentFont;
+    property ParentShowHint;
+    property ShowHint;
+    property TabOrder;
+    property TabStop default True;
+    property Visible;
     property OnClick;
   end;
 
@@ -40,7 +62,12 @@ function AddUiButton(const AParent: TWinControl; const ACaption: string; const A
 implementation
 
 uses
-  Dialogs, Math, System.Types, System.UITypes, uUiTheme, uUiPaint, uUiCard;
+  StdCtrls, Dialogs, Math, System.Types, System.UITypes, uUiTheme, uUiPaint, uUiCard;
+
+function IsButtonControl(const AControl: TControl): Boolean;
+begin
+  Result := (AControl is TUiButton) or (AControl is TButtonControl);
+end;
 
 function AddUiButton(const AParent: TWinControl; const ACaption: string; const ALeft, ATop, AWidth, AHeight: Integer;
   const AKind: TUiButtonKind; const AOnClick: TNotifyEvent): TUiButton;
@@ -64,13 +91,55 @@ begin
 end;
 
 procedure TUiButton.Click;
+var
+  vForm: TCustomForm;
 begin
+  vForm := GetParentForm(Self);
+  if Assigned(vForm) and (FModalResult <> mrNone) then
+    vForm.ModalResult := FModalResult;
   try
     inherited;
   except
     on E: EUiError do
+    begin
+      if Assigned(vForm) then
+        vForm.ModalResult := mrNone;
       MessageDlg(E.Message, mtWarning, [mbOK], 0);
+    end;
   end;
+end;
+
+procedure TUiButton.SetDefault(const AValue: Boolean);
+var
+  vForm: TCustomForm;
+begin
+  FDefault := AValue;
+  vForm := GetParentForm(Self);
+  if Assigned(vForm) and IsButtonControl(vForm.ActiveControl) then
+    FActive := vForm.ActiveControl = Self
+  else
+    FActive := FDefault;
+end;
+
+procedure TUiButton.CMDialogKey(var Message: TCMDialogKey);
+begin
+  if (((Message.CharCode = VK_RETURN) and FActive) or ((Message.CharCode = VK_ESCAPE) and FCancel)) and
+    (KeyDataToShiftState(Message.KeyData) = []) and CanFocus then
+  begin
+    Click;
+    Message.Result := 1;
+  end
+  else
+    inherited;
+end;
+
+procedure TUiButton.CMFocusChanged(var Message: TCMFocusChanged);
+begin
+  if IsButtonControl(Message.Sender) then
+    FActive := Message.Sender = Self
+  else
+    FActive := FDefault;
+  inherited;
 end;
 
 procedure TUiButton.SetKind(const AValue: TUiButtonKind);

@@ -3,22 +3,40 @@
 interface
 
 uses
-  Windows, Messages, SysUtils, Classes, Graphics, Controls, Generics.Collections;
+  Windows, Messages, SysUtils, Classes, Graphics, Controls, ImgList, Generics.Collections;
 
 type
   TUiTable = class;
 
   TUiTableTextFunc = reference to function(const AItem: TObject): string;
   TUiTableColorFunc = reference to function(const AItem: TObject): TColor;
+  TUiTableImageFunc = reference to function(const AItem: TObject): Integer;
   TUiSortDirection = (usdNone, usdAscending, usdDescending);
   TUiTableColumnEvent = procedure(Sender: TObject; const AColumn: Integer) of object;
+  TUiTableCellEvent = procedure(Sender: TObject; const AItem: TObject; const AColumn: Integer) of object;
 
   TUiTableSource = class
+  private
+    FSelection: TList<TObject>;
+    FOwnerTable: TUiTable;
+    FOnSelectionChanged: TNotifyEvent;
+    function Selection: TList<TObject>;
+  protected
+    procedure DoSelectionChanged;
   public
+    destructor Destroy; override;
     function Count: Integer; virtual; abstract;
     function Item(const AIndex: Integer): TObject; virtual; abstract;
     procedure Attach(const ATable: TUiTable); virtual;
     procedure Detach(const ATable: TUiTable); virtual;
+    function IsSelected(const AItem: TObject): Boolean; virtual;
+    procedure Select(const AItem: TObject); virtual;
+    procedure ToggleSelected(const AItem: TObject); virtual;
+    procedure ClearSelection; virtual;
+    function SelectedCount: Integer; virtual;
+    function SelectedAt(const AIndex: Integer): TObject; virtual;
+    procedure PruneSelection; virtual;
+    property OnSelectionChanged: TNotifyEvent read FOnSelectionChanged write FOnSelectionChanged;
   end;
 
   TUiListSource<T: class> = class(TUiTableSource)
@@ -38,13 +56,24 @@ type
     FWidth: Integer;
     FGetText: TUiTableTextFunc;
     FGetColor: TUiTableColorFunc;
+    FGetImage: TUiTableImageFunc;
+    FClickable: Boolean;
     FSortKey: string;
     FSort: TUiSortDirection;
+    FAlignment: TAlignment;
+    FHeaderAlignment: TAlignment;
   public
+    class function TextFormat(const AAlignment: TAlignment): TTextFormat; static;
+    class function TextRect(const AAlignment: TAlignment; const ACell: TRect;
+      const APadding, ACloseGap: Integer): TRect; static;
+    property Alignment: TAlignment read FAlignment write FAlignment;
+    property HeaderAlignment: TAlignment read FHeaderAlignment write FHeaderAlignment;
     property Caption: string read FCaption write FCaption;
     property Width: Integer read FWidth write FWidth;
     property GetText: TUiTableTextFunc read FGetText write FGetText;
     property GetColor: TUiTableColorFunc read FGetColor write FGetColor;
+    property GetImage: TUiTableImageFunc read FGetImage write FGetImage;
+    property Clickable: Boolean read FClickable write FClickable;
     property SortKey: string read FSortKey write FSortKey;
     property Sort: TUiSortDirection read FSort write FSort;
   end;
@@ -55,6 +84,7 @@ type
     Item: TObject;
     Texts: TArray<string>;
     Colors: TArray<TColor>;
+    Images: TArray<Integer>;
     Back: TColor;
   end;
 
@@ -62,9 +92,14 @@ type
   private
     FColumns: TObjectList<TUiTableColumn>;
     FSource: TUiTableSource;
-    FSelected: TObject;
+    FFocused: TObject;
+    FMultiSelect: Boolean;
+    FAllowDeselect: Boolean;
+    FSettingSelection: Boolean;
     FHover: TObject;
     FRowHeight: Integer;
+    FRowPadding: Integer;
+    FAutoRowHeight: Boolean;
     FHeaderHeight: Integer;
     FScrollBarSize: Integer;
     FScrollX: Integer;
@@ -84,6 +119,10 @@ type
     FDragColumn: Integer;
     FDownColumn: Integer;
     FDownOnItem: Boolean;
+    FDownCellItem: TObject;
+    FDownCellColumn: Integer;
+    FImages: TCustomImageList;
+    FOnCellClick: TUiTableCellEvent;
     FHotThumb: TUiTableDrag;
     FWidthsName: string;
     FEmptyText: string;
@@ -94,8 +133,17 @@ type
     function GetColumnCount: Integer;
     function GetCount: Integer;
     procedure SetSource(const AValue: TUiTableSource);
+    function GetSelected: TObject;
     procedure SetSelected(const AValue: TObject);
+    procedure SetMultiSelect(const AValue: Boolean);
+    function IsItemSelected(const AItem: TObject): Boolean;
+    function LeadWidth: Integer;
+    procedure SourceSelectionChanged;
     procedure SetRowHeight(const AValue: Integer);
+    procedure SetRowPadding(const AValue: Integer);
+    procedure ApplyRowHeight(const AValue: Integer);
+    procedure UpdateAutoRowHeight;
+    procedure CMFontChanged(var Message: TMessage); message CM_FONTCHANGED;
     procedure SetHeaderHeight(const AValue: Integer);
     procedure SetScrollBarSize(const AValue: Integer);
     procedure UpdateLayout;
@@ -116,7 +164,12 @@ type
     procedure InvalidateItem(const AItem: TObject);
     procedure SetHover(const AItem: TObject);
     procedure UpdateHoverFromCursor;
+    procedure SetHitCursor(const ACursor: TCursor);
+    function ClickableColumnAt(const X, Y: Integer): Integer;
+    procedure SetImages(const AValue: TCustomImageList);
     procedure SelectIndex(const AIndex: Integer);
+    procedure FocusIndex(const AIndex: Integer);
+    procedure ToggleIndex(const AIndex: Integer);
     procedure ScrollIntoView(const AIndex: Integer);
     procedure SaveWidths;
     procedure PaintHeader;
@@ -124,9 +177,12 @@ type
     procedure PaintScrollBar(const ATrack, AThumb: TRect; const AHot: Boolean);
     procedure CMMouseLeave(var Message: TMessage); message CM_MOUSELEAVE;
     procedure WMGetDlgCode(var Message: TWMGetDlgCode); message WM_GETDLGCODE;
+    procedure CMWantSpecialKey(var Message: TCMWantSpecialKey); message CM_WANTSPECIALKEY;
   protected
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
     procedure Paint; override;
     procedure Resize; override;
+    procedure CreateWnd; override;
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); override;
     procedure MouseMove(Shift: TShiftState; X, Y: Integer); override;
     procedure MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); override;
@@ -141,40 +197,226 @@ type
     procedure ItemChanged(const AItem: TObject);
     procedure ScrollToTop;
     procedure RestoreColumnWidths(const AName: string);
+    procedure AutoFitColumn(const AIndex: Integer);
     function ItemAt(const X, Y: Integer): TObject;
     function ColumnAt(const X: Integer): Integer;
+    function RevealCell(const AColumn, AIndex: Integer): TRect;
+    procedure ScrollToIndex(const AIndex: Integer);
+    procedure RefreshRows;
     property Columns[const AIndex: Integer]: TUiTableColumn read GetColumn;
     property ColumnCount: Integer read GetColumnCount;
     property Count: Integer read GetCount;
     property Source: TUiTableSource read FSource write SetSource;
-    property SelectedItem: TObject read FSelected write SetSelected;
+    property SelectedItem: TObject read GetSelected write SetSelected;
+    property FocusedItem: TObject read FFocused;
+    property MultiSelect: Boolean read FMultiSelect write SetMultiSelect;
+    property AllowDeselect: Boolean read FAllowDeselect write FAllowDeselect;
     property RowHeight: Integer read FRowHeight write SetRowHeight;
+    property RowPadding: Integer read FRowPadding write SetRowPadding;
     property HeaderHeight: Integer read FHeaderHeight write SetHeaderHeight;
     property ScrollBarSize: Integer read FScrollBarSize write SetScrollBarSize;
     property EmptyText: string read FEmptyText write FEmptyText;
     property RowColor: TUiTableColorFunc read FRowColor write FRowColor;
+    property Images: TCustomImageList read FImages write SetImages;
+    property OnCellClick: TUiTableCellEvent read FOnCellClick write FOnCellClick;
     property OnSelect: TNotifyEvent read FOnSelect write FOnSelect;
     property OnHeaderClick: TUiTableColumnEvent read FOnHeaderClick write FOnHeaderClick;
+    property Font;
     property OnDblClick;
+    property OnMouseDown;
+    property OnMouseMove;
+    property OnDragOver;
+    property OnDragDrop;
+    property OnStartDrag;
+    property OnEndDrag;
   end;
 
-function AddUiTable(const AParent: TWinControl; const ARowHeight: Integer): TUiTable;
+function AddUiTable(const AParent: TWinControl): TUiTable;
 
 implementation
 
 uses
-  Math, System.Types, System.UITypes, uStringGrid, uUiTheme;
+  Forms, Math, IniFiles, System.Types, System.UITypes, uUiTheme, uUiPaint;
 
-function AddUiTable(const AParent: TWinControl; const ARowHeight: Integer): TUiTable;
+function ColumnWidthsFile: TIniFile;
+begin
+  Result := TIniFile.Create(ExtractFilePath(ParamStr(0)) + 'config.ini');
+end;
+
+procedure SaveColumnWidths(const AName: string; const AWidths: array of Integer);
+var
+  vIni: TIniFile;
+  vSection: string;
+  i: Integer;
+begin
+  vSection := 'GridWidths_' + AName;
+  vIni := ColumnWidthsFile;
+  try
+    vIni.WriteInteger(vSection, 'ColCount', Length(AWidths));
+    for i := 0 to High(AWidths) do
+      vIni.WriteInteger(vSection, 'Col' + IntToStr(i), AWidths[i]);
+  finally
+    vIni.Free;
+  end;
+end;
+
+function LoadColumnWidths(const AName: string; var AWidths: TArray<Integer>): Boolean;
+var
+  vIni: TIniFile;
+  vSection: string;
+  i: Integer;
+begin
+  vSection := 'GridWidths_' + AName;
+  vIni := ColumnWidthsFile;
+  try
+    Result := vIni.ReadInteger(vSection, 'ColCount', -1) = Length(AWidths);
+    if not Result then
+      Exit;
+    for i := 0 to High(AWidths) do
+      AWidths[i] := vIni.ReadInteger(vSection, 'Col' + IntToStr(i), AWidths[i]);
+  finally
+    vIni.Free;
+  end;
+end;
+
+function AddUiTable(const AParent: TWinControl): TUiTable;
 begin
   Result := TUiTable.Create(AParent);
   Result.Parent := AParent;
   Result.Align := alClient;
-  Result.RowHeight := ARowHeight;
+end;
+
+class function TUiTableColumn.TextFormat(const AAlignment: TAlignment): TTextFormat;
+begin
+  Result := [tfVerticalCenter, tfSingleLine, tfNoPrefix, tfEndEllipsis];
+  case AAlignment of
+    taRightJustify:
+      Include(Result, tfRight);
+    taCenter:
+      Include(Result, tfCenter);
+  else
+    Include(Result, tfLeft);
+  end;
+end;
+
+class function TUiTableColumn.TextRect(const AAlignment: TAlignment; const ACell: TRect;
+  const APadding, ACloseGap: Integer): TRect;
+begin
+  Result := ACell;
+  case AAlignment of
+    taRightJustify:
+      begin
+        Inc(Result.Left, ACloseGap);
+        Dec(Result.Right, APadding);
+      end;
+    taCenter:
+      begin
+        Inc(Result.Left, APadding);
+        Dec(Result.Right, APadding);
+      end;
+  else
+    Inc(Result.Left, APadding);
+    Dec(Result.Right, ACloseGap);
+  end;
 end;
 
 procedure TUiTableSource.Attach(const ATable: TUiTable);
 begin
+end;
+
+destructor TUiTableSource.Destroy;
+begin
+  FreeAndNil(FSelection);
+  inherited;
+end;
+
+function TUiTableSource.Selection: TList<TObject>;
+begin
+  if not Assigned(FSelection) then
+    FSelection := TList<TObject>.Create;
+  Result := FSelection;
+end;
+
+procedure TUiTableSource.DoSelectionChanged;
+begin
+  if Assigned(FOwnerTable) then
+    FOwnerTable.SourceSelectionChanged;
+  if Assigned(FOnSelectionChanged) then
+    FOnSelectionChanged(Self);
+end;
+
+function TUiTableSource.IsSelected(const AItem: TObject): Boolean;
+begin
+  Result := Assigned(AItem) and Assigned(FSelection) and (FSelection.IndexOf(AItem) >= 0);
+end;
+
+procedure TUiTableSource.Select(const AItem: TObject);
+begin
+  if Assigned(AItem) and (SelectedCount = 1) and (Selection[0] = AItem) then
+    Exit;
+  if not Assigned(AItem) and (SelectedCount = 0) then
+    Exit;
+  Selection.Clear;
+  if Assigned(AItem) then
+    Selection.Add(AItem);
+  DoSelectionChanged;
+end;
+
+procedure TUiTableSource.ToggleSelected(const AItem: TObject);
+begin
+  if not Assigned(AItem) then
+    Exit;
+  if Selection.Remove(AItem) < 0 then
+    Selection.Add(AItem);
+  DoSelectionChanged;
+end;
+
+procedure TUiTableSource.ClearSelection;
+begin
+  if SelectedCount = 0 then
+    Exit;
+  Selection.Clear;
+  DoSelectionChanged;
+end;
+
+function TUiTableSource.SelectedCount: Integer;
+begin
+  if Assigned(FSelection) then
+    Result := FSelection.Count
+  else
+    Result := 0;
+end;
+
+function TUiTableSource.SelectedAt(const AIndex: Integer): TObject;
+begin
+  Result := Selection[AIndex];
+end;
+
+procedure TUiTableSource.PruneSelection;
+var
+  I, J: Integer;
+  vFound, vChanged: Boolean;
+begin
+  if SelectedCount = 0 then
+    Exit;
+  vChanged := False;
+  for I := FSelection.Count - 1 downto 0 do
+  begin
+    vFound := False;
+    for J := 0 to Count - 1 do
+      if Item(J) = FSelection[I] then
+      begin
+        vFound := True;
+        Break;
+      end;
+    if not vFound then
+    begin
+      FSelection.Delete(I);
+      vChanged := True;
+    end;
+  end;
+  if vChanged then
+    DoSelectionChanged;
 end;
 
 procedure TUiTableSource.Detach(const ATable: TUiTable);
@@ -213,15 +455,19 @@ begin
   inherited;
   ControlStyle := ControlStyle + [csOpaque];
   FColumns := TObjectList<TUiTableColumn>.Create(True);
-  FRowHeight := ScaleValue(36);
+  FRowPadding := 6;
+  FAutoRowHeight := True;
+  FRowHeight := ScaleValue(32);
   FHeaderHeight := FRowHeight;
   FScrollBarSize := ScaleValue(10);
   FCacheFirst := -1;
   FDownColumn := -1;
+  FDownCellColumn := -1;
   FDragColumn := -1;
   TabStop := True;
   DoubleBuffered := True;
   Color := clUiCard;
+  UpdateAutoRowHeight;
 end;
 
 destructor TUiTable.Destroy;
@@ -258,6 +504,7 @@ begin
   Result.Caption := ACaption;
   Result.Width := AWidth;
   Result.GetText := AGetText;
+  Result.HeaderAlignment := taCenter;
   FColumns.Add(Result);
   FCacheValid := False;
   UpdateLayout;
@@ -270,14 +517,54 @@ begin
   begin
     if Assigned(FSource) then
     begin
+      FSource.FOwnerTable := nil;
       FSource.Detach(Self);
       FSource.Free;
     end;
     FSource := AValue;
+    FFocused := nil;
     if Assigned(FSource) then
+    begin
+      FSource.FOwnerTable := Self;
       FSource.Attach(Self);
+    end;
   end;
   DataChanged;
+end;
+
+function TUiTable.GetSelected: TObject;
+begin
+  if Assigned(FSource) and (FSource.SelectedCount = 1) then
+    Result := FSource.SelectedAt(0)
+  else
+    Result := nil;
+end;
+
+function TUiTable.IsItemSelected(const AItem: TObject): Boolean;
+begin
+  Result := Assigned(FSource) and FSource.IsSelected(AItem);
+end;
+
+procedure TUiTable.SetMultiSelect(const AValue: Boolean);
+begin
+  FMultiSelect := AValue;
+  Invalidate;
+end;
+
+function TUiTable.LeadWidth: Integer;
+begin
+  Result := ScaleValue(3) + ScaleValue(4) + ScaleValue(4);
+  if FMultiSelect then
+    Inc(Result, ScaleValue(18) + ScaleValue(8))
+  else
+    Inc(Result, ScaleValue(16));
+end;
+
+procedure TUiTable.SourceSelectionChanged;
+begin
+  Invalidate;
+  if not FSettingSelection and Assigned(FOnSelect) then
+    FOnSelect(Self);
 end;
 
 procedure TUiTable.DataChanged;
@@ -302,12 +589,10 @@ begin
   end;
   if Assigned(FHover) and (IndexOfItem(FHover) < 0) then
     FHover := nil;
-  if Assigned(FSelected) and (IndexOfItem(FSelected) < 0) then
-  begin
-    FSelected := nil;
-    if Assigned(FOnSelect) then
-      FOnSelect(Self);
-  end;
+  if Assigned(FFocused) and (IndexOfItem(FFocused) < 0) then
+    FFocused := nil;
+  if Assigned(FSource) then
+    FSource.PruneSelection;
   Invalidate;
 end;
 
@@ -360,6 +645,8 @@ var
   end;
 
 begin
+  if not HandleAllocated then
+    Exit;
   vContent := GetCount * FRowHeight;
   vWidth := ClientWidth;
   vHeight := ClientHeight - FHeaderHeight;
@@ -414,13 +701,57 @@ begin
   Invalidate;
 end;
 
+procedure TUiTable.CreateWnd;
+begin
+  inherited;
+  UpdateLayout;
+end;
+
 procedure TUiTable.SetRowHeight(const AValue: Integer);
+begin
+  FAutoRowHeight := False;
+  ApplyRowHeight(AValue);
+end;
+
+procedure TUiTable.SetRowPadding(const AValue: Integer);
+begin
+  FRowPadding := Max(0, AValue);
+  FAutoRowHeight := True;
+  UpdateAutoRowHeight;
+end;
+
+procedure TUiTable.ApplyRowHeight(const AValue: Integer);
 begin
   FRowHeight := Max(1, AValue);
   FHeaderHeight := FRowHeight;
   FCacheValid := False;
   UpdateLayout;
   Invalidate;
+end;
+
+procedure TUiTable.UpdateAutoRowHeight;
+var
+  vDC: HDC;
+  vOldFont: HGDIOBJ;
+  vMetrics: TTextMetric;
+begin
+  if not FAutoRowHeight then
+    Exit;
+  vDC := GetDC(0);
+  try
+    vOldFont := SelectObject(vDC, Font.Handle);
+    GetTextMetrics(vDC, vMetrics);
+    SelectObject(vDC, vOldFont);
+  finally
+    ReleaseDC(0, vDC);
+  end;
+  ApplyRowHeight(vMetrics.tmHeight + 2 * ScaleValue(FRowPadding));
+end;
+
+procedure TUiTable.CMFontChanged(var Message: TMessage);
+begin
+  inherited;
+  UpdateAutoRowHeight;
 end;
 
 procedure TUiTable.SetHeaderHeight(const AValue: Integer);
@@ -496,6 +827,47 @@ begin
   end;
 end;
 
+procedure TUiTable.AutoFitColumn(const AIndex: Integer);
+var
+  vColumn: TUiTableColumn;
+  vText: string;
+  vWidth, I: Integer;
+begin
+  if (AIndex < 0) or (AIndex >= FColumns.Count) then
+    Exit;
+  vColumn := FColumns[AIndex];
+  Canvas.Font.Assign(Font);
+  Canvas.Font.Name := cUiFontSemibold;
+  vText := vColumn.Caption;
+  if vColumn.Sort <> usdNone then
+    vText := vText + ' ↑';
+  vWidth := Canvas.TextWidth(vText);
+  if Assigned(FSource) then
+  begin
+    EnsureCache;
+    for I := 0 to High(FCache) do
+      if (FCache[I].Images[AIndex] >= 0) and Assigned(FImages) then
+        vWidth := Max(vWidth, FImages.Width)
+      else
+      begin
+        if FCache[I].Colors[AIndex] <> clNone then
+          Canvas.Font.Name := cUiFontSemibold
+        else
+          Canvas.Font.Name := Font.Name;
+        vWidth := Max(vWidth, Canvas.TextWidth(FCache[I].Texts[AIndex]));
+      end;
+  end;
+  if AIndex = 0 then
+    Inc(vWidth, Max(ScaleValue(10), LeadWidth))
+  else
+    Inc(vWidth, ScaleValue(10));
+  Inc(vWidth, ScaleValue(6) + ScaleValue(2));
+  vColumn.Width := Max(ScaleValue(40), vWidth);
+  UpdateLayout;
+  Invalidate;
+  SaveWidths;
+end;
+
 function TUiTable.ColumnAt(const X: Integer): Integer;
 var
   I, vLeft: Integer;
@@ -566,6 +938,7 @@ begin
   ARow.Item := FSource.Item(AIndex);
   SetLength(ARow.Texts, FColumns.Count);
   SetLength(ARow.Colors, FColumns.Count);
+  SetLength(ARow.Images, FColumns.Count);
   for I := 0 to FColumns.Count - 1 do
   begin
     vColumn := FColumns[I];
@@ -577,6 +950,10 @@ begin
       ARow.Colors[I] := vColumn.GetColor(ARow.Item)
     else
       ARow.Colors[I] := clNone;
+    if Assigned(vColumn.GetImage) then
+      ARow.Images[I] := vColumn.GetImage(ARow.Item)
+    else
+      ARow.Images[I] := -1;
   end;
   if Assigned(FRowColor) then
     ARow.Back := FRowColor(ARow.Item)
@@ -633,6 +1010,40 @@ begin
   InvalidateItem(FHover);
 end;
 
+procedure TUiTable.SetHitCursor(const ACursor: TCursor);
+begin
+  if Cursor = ACursor then
+    Exit;
+  Cursor := ACursor;
+  Windows.SetCursor(Screen.Cursors[ACursor]);
+end;
+
+function TUiTable.ClickableColumnAt(const X, Y: Integer): Integer;
+begin
+  Result := ColumnAt(X);
+  if (Result >= 0) and ((IndexAtY(Y) < 0) or not FColumns[Result].Clickable) then
+    Result := -1;
+end;
+
+procedure TUiTable.SetImages(const AValue: TCustomImageList);
+begin
+  if FImages = AValue then
+    Exit;
+  if Assigned(FImages) then
+    FImages.RemoveFreeNotification(Self);
+  FImages := AValue;
+  if Assigned(FImages) then
+    FImages.FreeNotification(Self);
+  Invalidate;
+end;
+
+procedure TUiTable.Notification(AComponent: TComponent; Operation: TOperation);
+begin
+  inherited;
+  if (Operation = opRemove) and (AComponent = FImages) then
+    FImages := nil;
+end;
+
 procedure TUiTable.UpdateHoverFromCursor;
 var
   vPoint: TPoint;
@@ -648,29 +1059,71 @@ procedure TUiTable.SetSelected(const AValue: TObject);
 var
   vIndex: Integer;
 begin
-  if AValue = FSelected then
+  if not Assigned(FSource) then
     Exit;
-  InvalidateItem(FSelected);
-  FSelected := AValue;
-  vIndex := IndexOfItem(FSelected);
+  FSettingSelection := True;
+  try
+    FSource.Select(AValue);
+  finally
+    FSettingSelection := False;
+  end;
+  FFocused := AValue;
+  vIndex := IndexOfItem(AValue);
   if vIndex >= 0 then
     ScrollIntoView(vIndex);
-  InvalidateItem(FSelected);
+  Invalidate;
 end;
 
-procedure TUiTable.SelectIndex(const AIndex: Integer);
-var
-  vItem: TObject;
+procedure TUiTable.FocusIndex(const AIndex: Integer);
 begin
   if (AIndex < 0) or (AIndex >= GetCount) then
     Exit;
-  vItem := FSource.Item(AIndex);
+  FFocused := FSource.Item(AIndex);
   ScrollIntoView(AIndex);
-  if vItem = FSelected then
+  Invalidate;
+end;
+
+procedure TUiTable.SelectIndex(const AIndex: Integer);
+begin
+  if (AIndex < 0) or (AIndex >= GetCount) then
     Exit;
-  SetSelected(vItem);
-  if Assigned(FOnSelect) then
-    FOnSelect(Self);
+  FocusIndex(AIndex);
+  FSource.Select(FFocused);
+end;
+
+procedure TUiTable.ToggleIndex(const AIndex: Integer);
+begin
+  if (AIndex < 0) or (AIndex >= GetCount) then
+    Exit;
+  FocusIndex(AIndex);
+  FSource.ToggleSelected(FFocused);
+end;
+
+function TUiTable.RevealCell(const AColumn, AIndex: Integer): TRect;
+var
+  I: Integer;
+begin
+  ScrollIntoView(AIndex);
+  Result := RowRect(AIndex);
+  if (AColumn < 0) or (AColumn > High(FWidths)) then
+    Exit;
+  Result.Left := -FScrollX;
+  for I := 0 to AColumn - 1 do
+    Inc(Result.Left, FWidths[I]);
+  Result.Right := Min(Result.Left + FWidths[AColumn], FDataWidth);
+  Result.Left := Max(Result.Left, 0);
+end;
+
+procedure TUiTable.RefreshRows;
+begin
+  FCacheValid := False;
+  Invalidate;
+end;
+
+procedure TUiTable.ScrollToIndex(const AIndex: Integer);
+begin
+  if (AIndex >= 0) and (AIndex < GetCount) then
+    SetScroll(FScrollX, AIndex * FRowHeight);
 end;
 
 procedure TUiTable.ScrollIntoView(const AIndex: Integer);
@@ -745,27 +1198,41 @@ var
   vRow, vCell, vTextRect: TRect;
   vFill: TColor;
   vText: string;
+  vSelected, vDark: Boolean;
+  vMark: TColor;
+  vGlyphLeft, vGlyphRight, vBox, vDot: Integer;
+  vGlyphRect: TRect;
 begin
+  vGlyphLeft := ScaleValue(11);
+  vGlyphRight := LeadWidth;
   IntersectClipRect(Canvas.Handle, 0, FHeaderHeight, FDataWidth, FHeaderHeight + FDataHeight);
   try
     for I := 0 to High(FCache) do
     begin
       vRow := RowRect(FCacheFirst + I);
-      if FCache[I].Item = FSelected then
-        vFill := clUiSelection
-      else if FCache[I].Item = FHover then
-        vFill := clUiHover
-      else if FCache[I].Back <> clNone then
+      vSelected := IsItemSelected(FCache[I].Item);
+      if FCache[I].Back <> clNone then
         vFill := FCache[I].Back
+      else if vSelected then
+        vFill := clUiRowSelected
       else
         vFill := clUiCard;
+      if FCache[I].Item = FHover then
+        vFill := ShadeColor(vFill, 7);
+      vDark := IsDarkColor(vFill);
       Canvas.Brush.Style := bsSolid;
-      Canvas.Brush.Color := vFill;
+      Canvas.Brush.Color := clUiCard;
       Canvas.FillRect(vRow);
+      if vFill <> clUiCard then
+      begin
+        DrawRounded(Canvas, Rect(vRow.Left + ScaleValue(4), vRow.Top + 1, vRow.Right - ScaleValue(4),
+          vRow.Bottom - 1), ScaleValue(6), vFill, vFill);
+        Canvas.Brush.Style := bsSolid;
+      end;
       Canvas.Pen.Color := clUiBorder;
       Canvas.Pen.Width := 1;
-      Canvas.MoveTo(vRow.Left, vRow.Bottom - 1);
-      Canvas.LineTo(vRow.Right, vRow.Bottom - 1);
+      Canvas.MoveTo(vRow.Left + ScaleValue(4), vRow.Bottom - 1);
+      Canvas.LineTo(vRow.Right - ScaleValue(4), vRow.Bottom - 1);
 
       vLeft := -FScrollX;
       for J := 0 to FColumns.Count - 1 do
@@ -782,12 +1249,54 @@ begin
         end
         else
           Canvas.Font.Color := clUiText;
+        if vDark then
+          Canvas.Font.Color := clWhite;
         Canvas.Brush.Style := bsClear;
-        vTextRect := vCell;
-        Inc(vTextRect.Left, ScaleValue(10));
-        Dec(vTextRect.Right, ScaleValue(6));
-        vText := FCache[I].Texts[J];
-        Canvas.TextRect(vTextRect, vText, [tfLeft, tfVerticalCenter, tfSingleLine, tfNoPrefix, tfEndEllipsis]);
+        vTextRect := TUiTableColumn.TextRect(FColumns[J].Alignment, vCell, ScaleValue(10), ScaleValue(6));
+        if (vSelected or FMultiSelect) and (J = 0) then
+          vTextRect.Left := Max(vTextRect.Left, vRow.Left + vGlyphRight);
+        if (FCache[I].Images[J] >= 0) and Assigned(FImages) then
+          FImages.Draw(Canvas, (vTextRect.Left + vTextRect.Right - FImages.Width) div 2,
+            (vCell.Top + vCell.Bottom - FImages.Height) div 2, FCache[I].Images[J])
+        else
+        begin
+          vText := FCache[I].Texts[J];
+          Canvas.TextRect(vTextRect, vText, TUiTableColumn.TextFormat(FColumns[J].Alignment));
+        end;
+      end;
+
+      if vSelected and not FMultiSelect then
+      begin
+        if vDark then
+          vMark := clWhite
+        else
+          vMark := clUiAccent;
+        vDot := ScaleValue(10);
+        vGlyphRect := Rect(vRow.Left + vGlyphLeft, vRow.Top + (vRow.Height - vDot) div 2,
+          vRow.Left + vGlyphLeft + vDot, vRow.Top + (vRow.Height - vDot) div 2 + vDot);
+        DrawRounded(Canvas, vGlyphRect, vDot div 2, vMark, vMark);
+        Canvas.Brush.Style := bsSolid;
+      end;
+
+      if FMultiSelect then
+      begin
+        vBox := ScaleValue(18);
+        vGlyphRect := Rect(vRow.Left + vGlyphLeft, vRow.Top + (vRow.Height - vBox) div 2,
+          vRow.Left + vGlyphLeft + vBox, vRow.Top + (vRow.Height - vBox) div 2 + vBox);
+        if vSelected then
+        begin
+          if vDark then
+            vMark := clWhite
+          else
+            vMark := clUiAccent;
+          DrawRounded(Canvas, vGlyphRect, ScaleValue(4), vMark, vMark);
+          if vDark then
+            DrawCheckMark(Canvas, vGlyphRect, vFill, ScaleValue(2))
+          else
+            DrawCheckMark(Canvas, vGlyphRect, clWhite, ScaleValue(2));
+        end
+        else
+          DrawRounded(Canvas, vGlyphRect, ScaleValue(4), clUiCard, clUiMuted);
       end;
     end;
   finally
@@ -798,7 +1307,7 @@ end;
 procedure TUiTable.PaintHeader;
 var
   I, vLeft, vInset: Integer;
-  vCell, vTextRect: TRect;
+  vCell, vTextRect, vPill: TRect;
   vText: string;
 begin
   if FHeaderHeight <= 0 then
@@ -806,17 +1315,17 @@ begin
   Canvas.Brush.Style := bsSolid;
   Canvas.Brush.Color := clUiCard;
   Canvas.FillRect(Rect(0, 0, ClientWidth, FHeaderHeight));
-  Canvas.Pen.Color := clUiBorder;
+  vPill := Rect(ScaleValue(4), ScaleValue(3), ClientWidth - ScaleValue(4), FHeaderHeight - ScaleValue(3));
+  DrawRounded(Canvas, vPill, ScaleValue(6), clUiTableHeader, clUiTableHeader);
+  Canvas.Brush.Style := bsSolid;
   Canvas.Pen.Width := 1;
-  Canvas.MoveTo(0, FHeaderHeight - 1);
-  Canvas.LineTo(ClientWidth, FHeaderHeight - 1);
-  IntersectClipRect(Canvas.Handle, 0, 0, FDataWidth, FHeaderHeight);
+  IntersectClipRect(Canvas.Handle, vPill.Left, vPill.Top, Min(vPill.Right, FDataWidth), vPill.Bottom);
   try
     vInset := FHeaderHeight div 4;
     vLeft := -FScrollX;
     for I := 0 to FColumns.Count - 1 do
     begin
-      vCell := Rect(vLeft, 0, vLeft + FWidths[I], FHeaderHeight - 1);
+      vCell := Rect(vLeft, 0, vLeft + FWidths[I], FHeaderHeight);
       Inc(vLeft, FWidths[I]);
       if (vCell.Right <= 0) or (vCell.Left >= FDataWidth) then
         Continue;
@@ -831,12 +1340,13 @@ begin
         usdDescending:
           vText := vText + ' ↓';
       end;
-      vTextRect := vCell;
-      Inc(vTextRect.Left, ScaleValue(10));
-      Dec(vTextRect.Right, ScaleValue(6));
-      Canvas.TextRect(vTextRect, vText, [tfLeft, tfVerticalCenter, tfSingleLine, tfNoPrefix, tfEndEllipsis]);
+      vTextRect := TUiTableColumn.TextRect(FColumns[I].HeaderAlignment, vCell, ScaleValue(10), ScaleValue(6));
+      if FMultiSelect and (I = 0) then
+        vTextRect.Left := Max(vTextRect.Left, LeadWidth);
+      Canvas.TextRect(vTextRect, vText, TUiTableColumn.TextFormat(FColumns[I].HeaderAlignment));
       if I < FColumns.Count - 1 then
       begin
+        Canvas.Pen.Color := clUiTableHeaderDivider;
         Canvas.MoveTo(vCell.Right - 1, vInset);
         Canvas.LineTo(vCell.Right - 1, FHeaderHeight - vInset);
       end;
@@ -883,6 +1393,8 @@ begin
     SetFocus;
   FDownOnItem := False;
   FDownColumn := -1;
+  FDownCellItem := nil;
+  FDownCellColumn := -1;
   if Button <> mbLeft then
     Exit;
   vPoint := Point(X, Y);
@@ -919,6 +1431,11 @@ begin
   vColumn := ResizeColumnAt(X, Y);
   if vColumn >= 0 then
   begin
+    if ssDouble in Shift then
+    begin
+      AutoFitColumn(vColumn);
+      Exit;
+    end;
     FDrag := utdColumn;
     FDragColumn := vColumn;
     FDragOrigin := X;
@@ -933,8 +1450,28 @@ begin
   vIndex := IndexAtY(Y);
   if (vIndex >= 0) and (X < FDataWidth) then
   begin
+    vColumn := ClickableColumnAt(X, Y);
+    if vColumn >= 0 then
+    begin
+      if not (ssDouble in Shift) then
+      begin
+        FDownCellItem := FSource.Item(vIndex);
+        FDownCellColumn := vColumn;
+      end;
+      Exit;
+    end;
     FDownOnItem := True;
-    SelectIndex(vIndex);
+    if ssDouble in Shift then
+      Exit;
+    if FMultiSelect then
+      ToggleIndex(vIndex)
+    else if FAllowDeselect and (FSource.SelectedCount = 1) and IsItemSelected(FSource.Item(vIndex)) then
+    begin
+      FocusIndex(vIndex);
+      FSource.Select(nil);
+    end
+    else
+      SelectIndex(vIndex);
   end;
 end;
 
@@ -969,9 +1506,11 @@ begin
       end;
   end;
   if ResizeColumnAt(X, Y) >= 0 then
-    Cursor := crHSplit
+    SetHitCursor(crSizeWE)
+  else if ClickableColumnAt(X, Y) >= 0 then
+    SetHitCursor(crHandPoint)
   else
-    Cursor := crDefault;
+    SetHitCursor(crDefault);
   vPoint := Point(X, Y);
   vHot := utdNone;
   if FNeedV and PtInRect(VThumbRect, vPoint) then
@@ -989,13 +1528,24 @@ end;
 procedure TUiTable.MouseUp(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
 var
   vDrag: TUiTableDrag;
-  vColumn: Integer;
+  vColumn, vCellColumn: Integer;
+  vCellItem: TObject;
 begin
   inherited;
   vDrag := FDrag;
   vColumn := FDownColumn;
+  vCellItem := FDownCellItem;
+  vCellColumn := FDownCellColumn;
   FDrag := utdNone;
   FDownColumn := -1;
+  FDownCellItem := nil;
+  FDownCellColumn := -1;
+  if (Button = mbLeft) and Assigned(vCellItem) and (ItemAt(X, Y) = vCellItem) and
+    (ClickableColumnAt(X, Y) = vCellColumn) and Assigned(FOnCellClick) then
+  begin
+    FOnCellClick(Self, vCellItem, vCellColumn);
+    Exit;
+  end;
   case vDrag of
     utdColumn:
       SaveWidths;
@@ -1010,7 +1560,7 @@ end;
 
 procedure TUiTable.DblClick;
 begin
-  if FDownOnItem and Assigned(FSelected) then
+  if FDownOnItem and Assigned(FFocused) then
     inherited;
 end;
 
@@ -1021,7 +1571,14 @@ begin
   inherited;
   if GetCount = 0 then
     Exit;
-  vIndex := IndexOfItem(FSelected);
+  vIndex := IndexOfItem(FFocused);
+  if FMultiSelect and (Key = VK_SPACE) then
+  begin
+    if vIndex >= 0 then
+      ToggleIndex(vIndex);
+    Key := 0;
+    Exit;
+  end;
   vPage := Max(1, FDataHeight div FRowHeight);
   case Key of
     VK_UP:
@@ -1038,7 +1595,7 @@ begin
       vTarget := GetCount - 1;
     VK_RETURN:
       begin
-        if Assigned(FSelected) and Assigned(OnDblClick) then
+        if Assigned(FFocused) and Assigned(OnDblClick) then
           OnDblClick(Self);
         Key := 0;
         Exit;
@@ -1046,7 +1603,10 @@ begin
   else
     Exit;
   end;
-  SelectIndex(EnsureRange(vTarget, 0, GetCount - 1));
+  if FMultiSelect then
+    FocusIndex(EnsureRange(vTarget, 0, GetCount - 1))
+  else
+    SelectIndex(EnsureRange(vTarget, 0, GetCount - 1));
   Key := 0;
 end;
 
@@ -1075,6 +1635,13 @@ procedure TUiTable.WMGetDlgCode(var Message: TWMGetDlgCode);
 begin
   inherited;
   Message.Result := Message.Result or DLGC_WANTARROWS;
+end;
+
+procedure TUiTable.CMWantSpecialKey(var Message: TCMWantSpecialKey);
+begin
+  inherited;
+  if (Message.CharCode = VK_RETURN) and Assigned(FFocused) and Assigned(OnDblClick) then
+    Message.Result := 1;
 end;
 
 end.

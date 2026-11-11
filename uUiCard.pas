@@ -22,10 +22,15 @@ implementation
 uses
   Math, System.Types, System.UITypes, uUiTheme, uUiPaint;
 
+type
+  TControlAccess = class(TControl);
+
 function SurfaceOf(const AControl: TControl): TColor;
 begin
   if AControl.Parent is TUiCard then
     Result := clUiCard
+  else if Assigned(AControl.Parent) then
+    Result := TControlAccess(AControl.Parent).Color
   else
     Result := clUiBg;
 end;

@@ -3,24 +3,51 @@
 interface
 
 uses
-  Windows, Messages, SysUtils, Classes, Graphics, Controls, StdCtrls;
+  Windows, Messages, SysUtils, Classes, Graphics, Controls, StdCtrls, uUiTheme;
 
 type
-  TUiMemo = class(TCustomControl)
+  TUiMemo = class(TCustomMemo)
   private
-    FMemo: TMemo;
-    FFocused: Boolean;
-    function GetText: string;
-    procedure SetText(const AValue: string);
-    procedure MemoEnter(Sender: TObject);
-    procedure MemoExit(Sender: TObject);
-    procedure LayoutMemo;
+    procedure WMNCCalcSize(var Message: TWMNCCalcSize); message WM_NCCALCSIZE;
+    procedure WMNCPaint(var Message: TWMNCPaint); message WM_NCPAINT;
+    procedure WMNCHitTest(var Message: TWMNCHitTest); message WM_NCHITTEST;
+    procedure CMEnabledChanged(var Message: TMessage); message CM_ENABLEDCHANGED;
+    procedure CMColorChanged(var Message: TMessage); message CM_COLORCHANGED;
   protected
-    procedure Paint; override;
-    procedure Resize; override;
+    procedure DoEnter; override;
+    procedure DoExit; override;
   public
     constructor Create(AOwner: TComponent); override;
-    property Text: string read GetText write SetText;
+  published
+    property Align;
+    property Alignment;
+    property Anchors;
+    property Color default clUiCard;
+    property Enabled;
+    property Font;
+    property Hint;
+    property Lines;
+    property MaxLength;
+    property ParentFont;
+    property ParentShowHint;
+    property ReadOnly;
+    property ScrollBars;
+    property ShowHint;
+    property TabOrder;
+    property TabStop;
+    property Text;
+    property Visible;
+    property WantReturns;
+    property WantTabs;
+    property WordWrap;
+    property OnChange;
+    property OnClick;
+    property OnDblClick;
+    property OnEnter;
+    property OnExit;
+    property OnKeyDown;
+    property OnKeyPress;
+    property OnKeyUp;
   end;
 
 function AddUiMemo(const AParent: TWinControl; const ALeft, ATop, AWidth, AHeight: Integer): TUiMemo;
@@ -28,7 +55,7 @@ function AddUiMemo(const AParent: TWinControl; const ALeft, ATop, AWidth, AHeigh
 implementation
 
 uses
-  Math, System.Types, System.UITypes, Forms, uUiTheme, uUiPaint, uUiCard;
+  Math, System.Types, System.UITypes, Forms, uUiPaint, uUiCard;
 
 function AddUiMemo(const AParent: TWinControl; const ALeft, ATop, AWidth, AHeight: Integer): TUiMemo;
 begin
@@ -40,66 +67,67 @@ end;
 constructor TUiMemo.Create(AOwner: TComponent);
 begin
   inherited;
-  ControlStyle := ControlStyle + [csAcceptsControls, csOpaque];
-  FMemo := TMemo.Create(Self);
-  FMemo.Parent := Self;
-  FMemo.BorderStyle := bsNone;
-  FMemo.Color := clUiCard;
-  FMemo.ScrollBars := ssVertical;
-  FMemo.OnEnter := MemoEnter;
-  FMemo.OnExit := MemoExit;
+  BorderStyle := bsNone;
+  ParentColor := False;
+  Color := clUiCard;
+  ScrollBars := ssVertical;
 end;
 
-function TUiMemo.GetText: string;
-begin
-  Result := FMemo.Text;
-end;
-
-procedure TUiMemo.SetText(const AValue: string);
-begin
-  FMemo.Text := AValue;
-end;
-
-procedure TUiMemo.MemoEnter(Sender: TObject);
-begin
-  FFocused := True;
-  Invalidate;
-end;
-
-procedure TUiMemo.MemoExit(Sender: TObject);
-begin
-  FFocused := False;
-  Invalidate;
-end;
-
-procedure TUiMemo.LayoutMemo;
+procedure TUiMemo.WMNCCalcSize(var Message: TWMNCCalcSize);
 var
+  vRect: PRect;
   vPadding: Integer;
 begin
+  vRect := @Message.CalcSize_Params^.rgrc[0];
   vPadding := ScaleValue(6);
-  FMemo.SetBounds(vPadding + ScaleValue(4), vPadding, ClientWidth - vPadding * 2 - ScaleValue(4),
-    ClientHeight - vPadding * 2);
-end;
-
-procedure TUiMemo.Resize;
-begin
+  Inc(vRect^.Left, ScaleValue(10));
+  Inc(vRect^.Top, vPadding);
+  Dec(vRect^.Right, vPadding);
+  Dec(vRect^.Bottom, vPadding);
   inherited;
-  LayoutMemo;
-  Invalidate;
 end;
 
-procedure TUiMemo.Paint;
+procedure TUiMemo.WMNCPaint(var Message: TWMNCPaint);
 var
   vBorder: TColor;
 begin
-  Canvas.Brush.Style := bsSolid;
-  Canvas.Brush.Color := SurfaceOf(Self);
-  Canvas.FillRect(ClientRect);
-  if FFocused then
+  inherited;
+  if Focused then
     vBorder := clUiAccent
   else
     vBorder := clUiBorder;
-  DrawRounded(Canvas, ClientRect, ScaleValue(6), clUiCard, vBorder);
+  DrawFieldFrame(Self, SurfaceOf(Self), Color, vBorder, ScaleValue(6));
+end;
+
+procedure TUiMemo.WMNCHitTest(var Message: TWMNCHitTest);
+begin
+  inherited;
+  if (Message.Result = HTNOWHERE) or (Message.Result = HTBORDER) then
+    Message.Result := HTCLIENT;
+end;
+
+procedure TUiMemo.CMEnabledChanged(var Message: TMessage);
+begin
+  inherited;
+  RedrawFrame(Self);
+end;
+
+procedure TUiMemo.CMColorChanged(var Message: TMessage);
+begin
+  inherited;
+  RedrawFrame(Self);
+end;
+
+procedure TUiMemo.DoEnter;
+begin
+  inherited;
+  RedrawFrame(Self);
+end;
+
+procedure TUiMemo.DoExit;
+begin
+  inherited;
+  RedrawFrame(Self);
 end;
 
 end.
