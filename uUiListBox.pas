@@ -8,6 +8,8 @@ uses
 type
   TUiListBox = class(TListBox)
   private
+    FShowFrame: Boolean;
+    procedure SetShowFrame(const AValue: Boolean);
     procedure WMNCCalcSize(var Message: TWMNCCalcSize); message WM_NCCALCSIZE;
     procedure WMNCPaint(var Message: TWMNCPaint); message WM_NCPAINT;
     procedure CMEnabledChanged(var Message: TMessage); message CM_ENABLEDCHANGED;
@@ -21,6 +23,7 @@ type
     property BorderStyle default bsNone;
     property Color default clUiCard;
     property ItemHeight default 32;
+    property ShowFrame: Boolean read FShowFrame write SetShowFrame default True;
     property Style default lbOwnerDrawFixed;
   end;
 
@@ -97,6 +100,7 @@ end;
 constructor TUiListBox.Create(AOwner: TComponent);
 begin
   inherited;
+  FShowFrame := True;
   BorderStyle := bsNone;
   Color := clUiCard;
   Style := lbOwnerDrawFixed;
@@ -105,16 +109,28 @@ begin
   Height := 160;
 end;
 
+procedure TUiListBox.SetShowFrame(const AValue: Boolean);
+begin
+  if FShowFrame = AValue then
+    Exit;
+  FShowFrame := AValue;
+  if HandleAllocated then
+    SetWindowPos(Handle, 0, 0, 0, 0, 0, SWP_FRAMECHANGED or SWP_NOMOVE or SWP_NOSIZE or SWP_NOZORDER or
+      SWP_NOACTIVATE);
+end;
+
 procedure TUiListBox.WMNCCalcSize(var Message: TWMNCCalcSize);
 begin
-  ListNCCalcSize(Self, Message);
+  if FShowFrame then
+    ListNCCalcSize(Self, Message);
   inherited;
 end;
 
 procedure TUiListBox.WMNCPaint(var Message: TWMNCPaint);
 begin
   inherited;
-  ListNCPaint(Self, Focused);
+  if FShowFrame then
+    ListNCPaint(Self, Focused);
 end;
 
 procedure TUiListBox.CMEnabledChanged(var Message: TMessage);

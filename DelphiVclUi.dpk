@@ -47,6 +47,7 @@ contains
   uUiColorPicker in 'uUiColorPicker.pas',
   uUiTable in 'uUiTable.pas',
   uUiSchedule in 'uUiSchedule.pas',
+  uUiBarChart in 'uUiBarChart.pas',
   uUiHint in 'uUiHint.pas',
   uUiTabs in 'uUiTabs.pas',
   uUiListBox in 'uUiListBox.pas',

@@ -8,7 +8,7 @@ implementation
 
 uses
   Classes, Controls, DesignIntf, DesignEditors, uUiCard, uUiButton, uUiCheck, uUiEdit, uUiTimeEdit, uUiMemo,
-  uUiSelect, uUiDatePicker, uUiColorPicker, uUiTable, uUiTabs, uUiListBox, uUiForm;
+  uUiSelect, uUiDatePicker, uUiColorPicker, uUiTable, uUiTabs, uUiListBox, uUiForm, uUiBarChart;
 
 type
   TUiTabsEditor = class(TComponentEditor)
@@ -75,7 +75,7 @@ procedure Register;
 begin
   RegisterCustomModule(TUiForm, TCustomModule);
   RegisterComponents('Vcl Ui', [TUiCard, TUiButton, TUiCheck, TUiEdit, TUiTimeEdit, TUiMemo, TUiSelect,
-    TUiDatePicker, TUiColorPicker, TUiTable, TUiTabs, TUiListBox, TUiCheckList]);
+    TUiDatePicker, TUiColorPicker, TUiTable, TUiTabs, TUiListBox, TUiCheckList, TUiBarChart]);
   RegisterNoIcon([TUiTabSheet]);
   RegisterComponentEditor(TUiTabs, TUiTabsEditor);
   RegisterComponentEditor(TUiTabSheet, TUiTabsEditor);

@@ -120,6 +120,7 @@
         <DCCReference Include="uUiColorPicker.pas"/>
         <DCCReference Include="uUiTable.pas"/>
         <DCCReference Include="uUiSchedule.pas"/>
+        <DCCReference Include="uUiBarChart.pas"/>
         <DCCReference Include="uUiHint.pas"/>
         <DCCReference Include="uUiTabs.pas"/>
         <DCCReference Include="uUiListBox.pas"/>
