@@ -29,7 +29,8 @@ package DelphiVclUi;
 requires
   rtl,
   vcl,
-  vclwinx;
+  vclwinx,
+  vclx;
 
 contains
   uUiTheme in 'uUiTheme.pas',
@@ -43,7 +44,13 @@ contains
   uUiMemo in 'uUiMemo.pas',
   uUiSelect in 'uUiSelect.pas',
   uUiDatePicker in 'uUiDatePicker.pas',
+  uUiColorPicker in 'uUiColorPicker.pas',
   uUiTable in 'uUiTable.pas',
+  uUiSchedule in 'uUiSchedule.pas',
+  uUiHint in 'uUiHint.pas',
+  uUiTabs in 'uUiTabs.pas',
+  uUiListBox in 'uUiListBox.pas',
+  uUiMenuBar in 'uUiMenuBar.pas',
   uUiForm in 'uUiForm.pas';
 
 end.

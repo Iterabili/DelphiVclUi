@@ -12,7 +12,6 @@ type
     FTitle: string;
     function FontHeight: Integer;
     procedure SetTitle(const AValue: string);
-    procedure FrameChanged;
     procedure CMWantSpecialKey(var Message: TCMWantSpecialKey); message CM_WANTSPECIALKEY;
     procedure WMNCCalcSize(var Message: TWMNCCalcSize); message WM_NCCALCSIZE;
     procedure WMNCPaint(var Message: TWMNCPaint); message WM_NCPAINT;
@@ -25,12 +24,18 @@ type
     procedure DoExit; override;
     procedure KeyDown(var Key: Word; Shift: TShiftState); override;
     procedure KeyPress(var Key: Char); override;
+    procedure FrameChanged;
+    function FieldRect: TRect;
+    function TextInsetLeft: Integer; virtual;
+    function TextInsetRight: Integer; virtual;
+    procedure PaintAdornments(const ACanvas: TCanvas; const AField: TRect); virtual;
   public
     constructor Create(AOwner: TComponent); override;
   published
     property Align;
     property Alignment;
     property Anchors;
+    property CharCase;
     property Color default clUiCard;
     property Enabled;
     property EnterToNext: Boolean read FEnterToNext write FEnterToNext default False;
@@ -104,25 +109,64 @@ end;
 procedure TUiEdit.WMNCCalcSize(var Message: TWMNCCalcSize);
 var
   vRect: PRect;
-  vPaddingX, vPaddingY: Integer;
+  vPaddingY: Integer;
 begin
   vRect := @Message.CalcSize_Params^.rgrc[0];
   Inc(vRect^.Top, TitleHeight(Self, FTitle, Font));
-  vPaddingX := ScaleValue(10);
   vPaddingY := Max(ScaleValue(2), (vRect^.Bottom - vRect^.Top - FontHeight) div 2);
-  InflateRect(vRect^, -vPaddingX, -vPaddingY);
+  Inc(vRect^.Left, TextInsetLeft);
+  Dec(vRect^.Right, TextInsetRight);
+  Inc(vRect^.Top, vPaddingY);
+  Dec(vRect^.Bottom, vPaddingY);
   inherited;
+end;
+
+function TUiEdit.FieldRect: TRect;
+begin
+  Result := Rect(0, TitleHeight(Self, FTitle, Font), Width, Height);
+end;
+
+function TUiEdit.TextInsetLeft: Integer;
+begin
+  Result := ScaleValue(10);
+end;
+
+function TUiEdit.TextInsetRight: Integer;
+begin
+  Result := ScaleValue(10);
+end;
+
+procedure TUiEdit.PaintAdornments(const ACanvas: TCanvas; const AField: TRect);
+begin
 end;
 
 procedure TUiEdit.WMNCPaint(var Message: TWMNCPaint);
 var
   vBorder: TColor;
+  vInner: TRect;
+  vDC: HDC;
+  vCanvas: TCanvas;
 begin
   if Focused then
     vBorder := clUiAccent
   else
     vBorder := clUiBorder;
   DrawFieldFrame(Self, SurfaceOf(Self), Color, vBorder, ScaleValue(6), FTitle, Font);
+  vInner := FieldInnerRect(Self);
+  vDC := GetWindowDC(Handle);
+  try
+    ExcludeClipRect(vDC, vInner.Left, vInner.Top, vInner.Right, vInner.Bottom);
+    vCanvas := TCanvas.Create;
+    try
+      vCanvas.Handle := vDC;
+      PaintAdornments(vCanvas, FieldRect);
+    finally
+      vCanvas.Handle := 0;
+      vCanvas.Free;
+    end;
+  finally
+    ReleaseDC(Handle, vDC);
+  end;
   Message.Result := 0;
 end;
 

@@ -34,6 +34,28 @@ const
   cUiFontMono = 'Consolas';
   cUiFontSize = 10;
 
+  cUiIconAdd = #$E710;
+  cUiIconDelete = #$E74D;
+  cUiIconEdit = #$E70F;
+  cUiIconCalculator = #$E8EF;
+  cUiIconClock = #$E823;
+  cUiIconComment = #$E90A;
+  cUiIconCalendar = #$E787;
+  cUiIconPeople = #$E716;
+  cUiIconContact = #$E77B;
+  cUiIconHistory = #$E81C;
+  cUiIconMore = #$E712;
+  cUiIconSearch = #$E721;
+  cUiIconPause = #$E769;
+  cUiIconPlay = #$E768;
+  cUiIconTag = #$E8EC;
+  cUiIconSwitch = #$E8AB;
+  cUiIconMoney = #$E8C7;
+  cUiIconCheckList = #$E9D5;
+
+  clUiInfo = TColor($00C0782B);
+  clUiPurple = TColor($00B0457E);
+
 type
   EUiError = class(Exception);
 
@@ -42,8 +64,38 @@ type
 function AddUiLabel(const AParent: TWinControl; const ACaption: string; const ALeft, ATop: Integer;
   const AStyle: TUiLabelStyle = ulsBody): TLabel;
 procedure ApplyUiFont(const AFont: TFont);
+function UiIconFontName: string;
+function TintColor(const AColor: TColor; const APercent: Integer): TColor;
 
 implementation
+
+uses
+  Windows, Forms;
+
+var
+  GIconFontName: string;
+
+function UiIconFontName: string;
+begin
+  if GIconFontName = '' then
+  begin
+    if Screen.Fonts.IndexOf('Segoe Fluent Icons') >= 0 then
+      GIconFontName := 'Segoe Fluent Icons'
+    else
+      GIconFontName := 'Segoe MDL2 Assets';
+  end;
+  Result := GIconFontName;
+end;
+
+function TintColor(const AColor: TColor; const APercent: Integer): TColor;
+var
+  vRgb: COLORREF;
+begin
+  vRgb := ColorToRGB(AColor);
+  Result := TColor(RGB(GetRValue(vRgb) + (255 - GetRValue(vRgb)) * APercent div 100,
+    GetGValue(vRgb) + (255 - GetGValue(vRgb)) * APercent div 100,
+    GetBValue(vRgb) + (255 - GetBValue(vRgb)) * APercent div 100));
+end;
 
 procedure ApplyUiFont(const AFont: TFont);
 begin

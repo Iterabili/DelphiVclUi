@@ -18,6 +18,10 @@ type
     FDefault: Boolean;
     FCancel: Boolean;
     FActive: Boolean;
+    FWordWrap: Boolean;
+    FGlyph: string;
+    procedure SetWordWrap(const AValue: Boolean);
+    procedure SetGlyph(const AValue: string);
     procedure CMMouseEnter(var Message: TMessage); message CM_MOUSEENTER;
     procedure CMMouseLeave(var Message: TMessage); message CM_MOUSELEAVE;
     procedure CMEnabledChanged(var Message: TMessage); message CM_ENABLEDCHANGED;
@@ -44,6 +48,7 @@ type
     property Default: Boolean read FDefault write SetDefault default False;
     property Enabled;
     property Font;
+    property Glyph: string read FGlyph write SetGlyph;
     property Hint;
     property Kind: TUiButtonKind read FKind write SetKind default ubkSecondary;
     property ModalResult: TModalResult read FModalResult write FModalResult default mrNone;
@@ -53,6 +58,7 @@ type
     property TabOrder;
     property TabStop default True;
     property Visible;
+    property WordWrap: Boolean read FWordWrap write SetWordWrap default False;
     property OnClick;
   end;
 
@@ -222,8 +228,9 @@ end;
 procedure TUiButton.Paint;
 var
   vFill, vBorder, vText: TColor;
-  vRect: TRect;
+  vRect, vTextRect, vGlyphRect: TRect;
   vCaption: string;
+  vGlyphWidth, vGap, vContentWidth, vLeft: Integer;
 begin
   if not Enabled then
   begin
@@ -279,8 +286,79 @@ begin
   Canvas.Font.Color := vText;
   Canvas.Brush.Style := bsClear;
   vRect := ClientRect;
+  InflateRect(vRect, -ScaleValue(8), 0);
   vCaption := Caption;
-  Canvas.TextRect(vRect, vCaption, [tfCenter, tfVerticalCenter, tfSingleLine, tfNoPrefix, tfEndEllipsis]);
+  if FGlyph <> '' then
+  begin
+    Canvas.Font.Name := UiIconFontName;
+    Canvas.Font.Height := Font.Height;
+    vGlyphWidth := Canvas.TextWidth(FGlyph);
+    if vCaption = '' then
+      vGap := 0
+    else
+      vGap := ScaleValue(8);
+    Canvas.Font.Assign(Font);
+    Canvas.Font.Name := cUiFontSemibold;
+    Canvas.Font.Color := vText;
+    vTextRect := Rect(0, 0, Max(0, vRect.Width - vGlyphWidth - vGap), Height);
+    if vCaption <> '' then
+    begin
+      if FWordWrap then
+        Canvas.TextRect(vTextRect, vCaption, [tfLeft, tfWordBreak, tfNoPrefix, tfCalcRect])
+      else
+        vTextRect.Right := Min(vTextRect.Right, Canvas.TextWidth(vCaption));
+    end
+    else
+      vTextRect.Right := 0;
+    vContentWidth := Min(vRect.Width, vGlyphWidth + vGap + vTextRect.Width);
+    vLeft := vRect.Left + (vRect.Width - vContentWidth) div 2;
+    vGlyphRect := Rect(vLeft, 0, vLeft + vGlyphWidth, Height);
+    vTextRect := Rect(vGlyphRect.Right + vGap, (Height - vTextRect.Height) div 2,
+      vLeft + vContentWidth, (Height - vTextRect.Height) div 2 + vTextRect.Height);
+    if vCaption <> '' then
+    begin
+      if FWordWrap then
+        Canvas.TextRect(vTextRect, vCaption, [tfLeft, tfWordBreak, tfNoPrefix])
+      else
+      begin
+        vTextRect.Top := 0;
+        vTextRect.Bottom := Height;
+        Canvas.TextRect(vTextRect, vCaption, [tfLeft, tfVerticalCenter, tfSingleLine, tfNoPrefix, tfEndEllipsis]);
+      end;
+    end;
+    Canvas.Font.Name := UiIconFontName;
+    Canvas.Font.Height := Font.Height;
+    if FKind = ubkSecondary then
+      Canvas.Font.Color := clUiAccent
+    else
+      Canvas.Font.Color := vText;
+    if not Enabled then
+      Canvas.Font.Color := vText;
+    vCaption := FGlyph;
+    Canvas.TextRect(vGlyphRect, vCaption, [tfCenter, tfVerticalCenter, tfSingleLine, tfNoPrefix]);
+  end
+  else if FWordWrap then
+  begin
+    vTextRect := vRect;
+    Canvas.TextRect(vTextRect, vCaption, [tfCenter, tfWordBreak, tfNoPrefix, tfCalcRect]);
+    vRect.Top := (Height - vTextRect.Height) div 2;
+    vRect.Bottom := vRect.Top + vTextRect.Height;
+    Canvas.TextRect(vRect, vCaption, [tfCenter, tfWordBreak, tfNoPrefix]);
+  end
+  else
+    Canvas.TextRect(vRect, vCaption, [tfCenter, tfVerticalCenter, tfSingleLine, tfNoPrefix, tfEndEllipsis]);
+end;
+
+procedure TUiButton.SetWordWrap(const AValue: Boolean);
+begin
+  FWordWrap := AValue;
+  Invalidate;
+end;
+
+procedure TUiButton.SetGlyph(const AValue: string);
+begin
+  FGlyph := AValue;
+  Invalidate;
 end;
 
 end.

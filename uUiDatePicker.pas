@@ -13,8 +13,12 @@ type
     FPopupOpen: Boolean;
     FPopupClosedAt: Cardinal;
     FTitle: string;
+    FDisplayFormat: string;
     FOnChange: TNotifyEvent;
     procedure SetTitle(const AValue: string);
+    procedure SetDisplayFormat(const AValue: string);
+    function IsDisplayFormatStored: Boolean;
+    procedure CMEnabledChanged(var Message: TMessage); message CM_ENABLEDCHANGED;
     procedure CMMouseEnter(var Message: TMessage); message CM_MOUSEENTER;
     procedure CMMouseLeave(var Message: TMessage); message CM_MOUSELEAVE;
     procedure SetDate(const AValue: TDateTime);
@@ -31,6 +35,7 @@ type
   published
     property Align;
     property Anchors;
+    property DisplayFormat: string read FDisplayFormat write SetDisplayFormat stored IsDisplayFormatStored;
     property Enabled;
     property Font;
     property Hint;
@@ -52,6 +57,9 @@ implementation
 
 uses
   Forms, ComCtrls, Math, System.Types, System.UITypes, Winapi.CommCtrl, Winapi.GDIPAPI, Winapi.GDIPOBJ, uUiTheme, uUiPaint, uUiCard, uUiPopup;
+
+const
+  cUiDateFormat = 'dd.mm.yyyy';
 
 type
   TUiMonthCalendar = class(TMonthCalendar)
@@ -133,6 +141,27 @@ begin
   Width := 160;
   Height := 34;
   FDate := Trunc(Now);
+  FDisplayFormat := cUiDateFormat;
+end;
+
+procedure TUiDatePicker.SetDisplayFormat(const AValue: string);
+begin
+  if AValue = '' then
+    FDisplayFormat := cUiDateFormat
+  else
+    FDisplayFormat := AValue;
+  Invalidate;
+end;
+
+function TUiDatePicker.IsDisplayFormatStored: Boolean;
+begin
+  Result := FDisplayFormat <> cUiDateFormat;
+end;
+
+procedure TUiDatePicker.CMEnabledChanged(var Message: TMessage);
+begin
+  inherited;
+  Invalidate;
 end;
 
 procedure TUiDatePicker.SetTitle(const AValue: string);
@@ -226,7 +255,9 @@ begin
     vBorder := clUiAccent
   else
     vBorder := clUiBorder;
-  if FHover then
+  if not Enabled then
+    vFill := clUiDisabledFill
+  else if FHover then
     vFill := clUiHover
   else
     vFill := clUiCard;
@@ -238,8 +269,10 @@ begin
   Canvas.Font.Color := clUiText;
   Canvas.Brush.Style := bsClear;
   vTextRect := Rect(ScaleValue(10), vTop, Width - ScaleValue(28), Height);
+  if not Enabled then
+    Canvas.Font.Color := clUiDisabledText;
   if FDate > 0 then
-    vText := FormatDateTime('dd.mm.yyyy', FDate)
+    vText := FormatDateTime(FDisplayFormat, FDate)
   else
   begin
     vText := 'не указана';

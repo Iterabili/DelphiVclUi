@@ -39,6 +39,7 @@ type
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     procedure ClearItems;
+    procedure Clear;
     procedure AddItem(const ACaption: string; const AObject: TObject = nil);
     function Count: Integer;
     function IndexOfObject(const AObject: TObject): Integer;
@@ -210,6 +211,11 @@ end;
 procedure TUiSelect.ClearItems;
 begin
   FItems.Clear;
+end;
+
+procedure TUiSelect.Clear;
+begin
+  ClearItems;
 end;
 
 procedure TUiSelect.AddItem(const ACaption: string; const AObject: TObject);

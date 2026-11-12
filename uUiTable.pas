@@ -61,19 +61,21 @@ type
     FSortKey: string;
     FSort: TUiSortDirection;
     FAlignment: TAlignment;
-    FHeaderAlignment: TAlignment;
+    FBadge: Boolean;
+    FIconFont: Boolean;
   public
     class function TextFormat(const AAlignment: TAlignment): TTextFormat; static;
     class function TextRect(const AAlignment: TAlignment; const ACell: TRect;
       const APadding, ACloseGap: Integer): TRect; static;
     property Alignment: TAlignment read FAlignment write FAlignment;
-    property HeaderAlignment: TAlignment read FHeaderAlignment write FHeaderAlignment;
     property Caption: string read FCaption write FCaption;
     property Width: Integer read FWidth write FWidth;
     property GetText: TUiTableTextFunc read FGetText write FGetText;
     property GetColor: TUiTableColorFunc read FGetColor write FGetColor;
     property GetImage: TUiTableImageFunc read FGetImage write FGetImage;
     property Clickable: Boolean read FClickable write FClickable;
+    property Badge: Boolean read FBadge write FBadge;
+    property IconFont: Boolean read FIconFont write FIconFont;
     property SortKey: string read FSortKey write FSortKey;
     property Sort: TUiSortDirection read FSort write FSort;
   end;
@@ -173,6 +175,8 @@ type
     procedure SaveWidths;
     procedure PaintHeader;
     procedure PaintRows;
+    function ColumnAlignment(const AIndex: Integer): TAlignment;
+    procedure PaintBadge(const ARect: TRect; const AAlignment: TAlignment; const AText: string; const AColor: TColor);
     procedure PaintScrollBar(const ATrack, AThumb: TRect; const AHot: Boolean);
     procedure CMMouseLeave(var Message: TMessage); message CM_MOUSELEAVE;
     procedure WMGetDlgCode(var Message: TWMGetDlgCode); message WM_GETDLGCODE;
@@ -521,7 +525,6 @@ begin
   Result.Caption := ACaption;
   Result.Width := AWidth;
   Result.GetText := AGetText;
-  Result.HeaderAlignment := taCenter;
   FColumns.Add(Result);
   FCacheValid := False;
   UpdateLayout;
@@ -802,7 +805,7 @@ var
   vLength, vPosition: Integer;
 begin
   vTrack := VTrackRect;
-  vLength := Max(ScaleValue(24), MulDiv(vTrack.Height, FDataHeight, Max(1, GetCount * FRowHeight)));
+  vLength := Max(Max(ScaleValue(48), FScrollBarSize * 2), MulDiv(vTrack.Height, FDataHeight, Max(1, GetCount * FRowHeight)));
   vLength := Min(vLength, vTrack.Height);
   vPosition := 0;
   if MaxScrollY > 0 then
@@ -816,7 +819,7 @@ var
   vLength, vPosition: Integer;
 begin
   vTrack := HTrackRect;
-  vLength := Max(ScaleValue(24), MulDiv(vTrack.Width, FDataWidth, Max(1, FTotalWidth)));
+  vLength := Max(Max(ScaleValue(48), FScrollBarSize * 2), MulDiv(vTrack.Width, FDataWidth, Max(1, FTotalWidth)));
   vLength := Min(vLength, vTrack.Width);
   vPosition := 0;
   if MaxScrollX > 0 then
@@ -844,7 +847,7 @@ procedure TUiTable.AutoFitColumn(const AIndex: Integer);
 var
   vColumn: TUiTableColumn;
   vText: string;
-  vWidth, I: Integer;
+  vWidth, vHeaderWidth, I: Integer;
 begin
   if (AIndex < 0) or (AIndex >= FColumns.Count) then
     Exit;
@@ -854,7 +857,10 @@ begin
   vText := vColumn.Caption;
   if vColumn.Sort <> usdNone then
     vText := vText + ' ↑';
-  vWidth := Canvas.TextWidth(vText);
+  vHeaderWidth := Canvas.TextWidth(vText) + 2 * ScaleValue(10) + ScaleValue(6);
+  if (AIndex = 0) and FMultiSelect then
+    vHeaderWidth := Max(vHeaderWidth, LeadWidth + Canvas.TextWidth(vText) + ScaleValue(16));
+  vWidth := 0;
   if Assigned(FSource) then
   begin
     EnsureCache;
@@ -875,7 +881,7 @@ begin
   else
     Inc(vWidth, ScaleValue(10));
   Inc(vWidth, ScaleValue(6) + ScaleValue(2));
-  vColumn.Width := Max(ScaleValue(40), vWidth);
+  vColumn.Width := Max(ScaleValue(40), Max(vWidth, vHeaderWidth));
   UpdateLayout;
   Invalidate;
   SaveWidths;
@@ -1262,19 +1268,27 @@ begin
         end
         else
           Canvas.Font.Color := clUiText;
+        if FColumns[J].IconFont then
+          Canvas.Font.Name := UiIconFontName;
         if vDark then
           Canvas.Font.Color := clWhite;
         Canvas.Brush.Style := bsClear;
-        vTextRect := TUiTableColumn.TextRect(FColumns[J].Alignment, vCell, ScaleValue(10), ScaleValue(6));
+        vTextRect := TUiTableColumn.TextRect(ColumnAlignment(J), vCell, ScaleValue(10), ScaleValue(6));
         if (vSelected or FMultiSelect) and (J = 0) then
           vTextRect.Left := Max(vTextRect.Left, vRow.Left + vGlyphRight);
-        if (FCache[I].Images[J] >= 0) and Assigned(FImages) then
+        if FColumns[J].Badge and (FCache[I].Colors[J] <> clNone) and (FCache[I].Texts[J] <> '') then
+        begin
+          if FColumns[J].IconFont then
+            vTextRect := Rect(vCell.Left + ScaleValue(4), vCell.Top, vCell.Right - ScaleValue(4), vCell.Bottom);
+          PaintBadge(vTextRect, ColumnAlignment(J), FCache[I].Texts[J], FCache[I].Colors[J]);
+        end
+        else if (FCache[I].Images[J] >= 0) and Assigned(FImages) then
           FImages.Draw(Canvas, (vTextRect.Left + vTextRect.Right - FImages.Width) div 2,
             (vCell.Top + vCell.Bottom - FImages.Height) div 2, FCache[I].Images[J])
         else
         begin
           vText := FCache[I].Texts[J];
-          Canvas.TextRect(vTextRect, vText, TUiTableColumn.TextFormat(FColumns[J].Alignment));
+          Canvas.TextRect(vTextRect, vText, TUiTableColumn.TextFormat(ColumnAlignment(J)));
         end;
       end;
 
@@ -1317,10 +1331,48 @@ begin
   end;
 end;
 
+function TUiTable.ColumnAlignment(const AIndex: Integer): TAlignment;
+begin
+  if AIndex = FColumns.Count - 1 then
+    Result := taLeftJustify
+  else
+    Result := FColumns[AIndex].Alignment;
+end;
+
+procedure TUiTable.PaintBadge(const ARect: TRect; const AAlignment: TAlignment; const AText: string;
+  const AColor: TColor);
+var
+  vPadX, vPadY, vWidth, vHeight, vLeft, vTop, vTextWidth: Integer;
+  vPill: TRect;
+  vText: string;
+begin
+  vPadX := ScaleValue(10);
+  vPadY := ScaleValue(3);
+  vTextWidth := Canvas.TextWidth(AText);
+  vWidth := Min(ARect.Width, vTextWidth + vPadX * 2);
+  vHeight := Min(ARect.Height, Canvas.TextHeight(AText) + vPadY * 2);
+  case AAlignment of
+    taRightJustify:
+      vLeft := ARect.Right - vWidth;
+    taCenter:
+      vLeft := ARect.Left + (ARect.Width - vWidth) div 2;
+  else
+    vLeft := ARect.Left - ScaleValue(6);
+  end;
+  vTop := ARect.Top + (ARect.Height - vHeight) div 2;
+  vPill := Rect(vLeft, vTop, vLeft + vWidth, vTop + vHeight);
+  DrawRounded(Canvas, vPill, vHeight div 2, TintColor(AColor, 85), TintColor(AColor, 60));
+  Canvas.Brush.Style := bsClear;
+  Canvas.Font.Color := ShadeColor(AColor, 20);
+  vText := AText;
+  InflateRect(vPill, -Max(0, Min(vPadX, (vPill.Width - vTextWidth) div 2)), 0);
+  Canvas.TextRect(vPill, vText, [tfCenter, tfVerticalCenter, tfSingleLine, tfNoPrefix, tfEndEllipsis]);
+end;
+
 procedure TUiTable.PaintHeader;
 var
   I, vLeft, vInset: Integer;
-  vCell, vTextRect, vPill: TRect;
+  vCell, vTextCell, vTextRect, vPill: TRect;
   vText: string;
 begin
   if FHeaderHeight <= 0 then
@@ -1353,10 +1405,18 @@ begin
         usdDescending:
           vText := vText + ' ↓';
       end;
-      vTextRect := TUiTableColumn.TextRect(FColumns[I].HeaderAlignment, vCell, ScaleValue(10), ScaleValue(6));
+      vTextCell := vCell;
+      if I = FColumns.Count - 1 then
+      begin
+        if ColumnAlignment(I) = taRightJustify then
+          vTextCell.Left := Max(vCell.Left, vCell.Right - FColumns[I].Width)
+        else
+          vTextCell.Right := Min(vCell.Right, vCell.Left + FColumns[I].Width);
+      end;
+      vTextRect := TUiTableColumn.TextRect(ColumnAlignment(I), vTextCell, ScaleValue(10), ScaleValue(6));
       if FMultiSelect and (I = 0) then
         vTextRect.Left := Max(vTextRect.Left, LeadWidth);
-      Canvas.TextRect(vTextRect, vText, TUiTableColumn.TextFormat(FColumns[I].HeaderAlignment));
+      Canvas.TextRect(vTextRect, vText, TUiTableColumn.TextFormat(ColumnAlignment(I)));
       if I < FColumns.Count - 1 then
       begin
         Canvas.Pen.Color := clUiTableHeaderDivider;

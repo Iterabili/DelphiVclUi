@@ -105,6 +105,7 @@
         <DCCReference Include="rtl.dcp"/>
         <DCCReference Include="vcl.dcp"/>
         <DCCReference Include="vclwinx.dcp"/>
+        <DCCReference Include="vclx.dcp"/>
         <DCCReference Include="uUiTheme.pas"/>
         <DCCReference Include="uUiPaint.pas"/>
         <DCCReference Include="uUiCard.pas"/>
@@ -116,7 +117,13 @@
         <DCCReference Include="uUiMemo.pas"/>
         <DCCReference Include="uUiSelect.pas"/>
         <DCCReference Include="uUiDatePicker.pas"/>
+        <DCCReference Include="uUiColorPicker.pas"/>
         <DCCReference Include="uUiTable.pas"/>
+        <DCCReference Include="uUiSchedule.pas"/>
+        <DCCReference Include="uUiHint.pas"/>
+        <DCCReference Include="uUiTabs.pas"/>
+        <DCCReference Include="uUiListBox.pas"/>
+        <DCCReference Include="uUiMenuBar.pas"/>
         <DCCReference Include="uUiForm.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>

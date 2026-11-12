@@ -14,6 +14,8 @@ function ShadeColor(const AColor: TColor; const APercent: Integer): TColor;
 function IsDarkColor(const AColor: TColor): Boolean;
 procedure DrawRounded(const ACanvas: TCanvas; const ARect: TRect; const ARadius: Integer;
   const AFill, ABorder: TColor; const ABorderWidth: Integer = 1);
+procedure DrawRoundedFrame(const ACanvas: TCanvas; const ARect: TRect; const ARadius: Integer;
+  const ASurface, ABorder: TColor);
 procedure DrawCheckMark(const ACanvas: TCanvas; const ARect: TRect; const AColor: TColor; const AWidth: Integer);
 function FieldInnerRect(const AControl: TWinControl): TRect;
 procedure DrawFieldFrame(const AControl: TWinControl; const ASurface, AFill, ABorder: TColor; const ARadius: Integer;
@@ -146,6 +148,51 @@ begin
     vPen.Free;
     vBrush.Free;
     vPath.Free;
+    vGraphics.Free;
+  end;
+end;
+
+procedure DrawRoundedFrame(const ACanvas: TCanvas; const ARect: TRect; const ARadius: Integer;
+  const ASurface, ABorder: TColor);
+var
+  vGraphics: TGPGraphics;
+  vOuter, vInner: TGPGraphicsPath;
+  vRegion: TGPRegion;
+  vBrush: TGPSolidBrush;
+  vPen: TGPPen;
+  vDiameter, vLeft, vTop, vRight, vBottom: Integer;
+begin
+  vDiameter := ARadius * 2;
+  vLeft := ARect.Left;
+  vTop := ARect.Top;
+  vRight := ARect.Right - 1;
+  vBottom := ARect.Bottom - 1;
+  vGraphics := TGPGraphics.Create(ACanvas.Handle);
+  vOuter := TGPGraphicsPath.Create;
+  vInner := TGPGraphicsPath.Create;
+  vBrush := TGPSolidBrush.Create(ToGpColor(ASurface));
+  vPen := TGPPen.Create(ToGpColor(ABorder), 1);
+  try
+    vGraphics.SetSmoothingMode(SmoothingModeAntiAlias);
+    vOuter.AddRectangle(MakeRect(vLeft - 1, vTop - 1, vRight - vLeft + 3, vBottom - vTop + 3));
+    vInner.AddArc(vLeft, vTop, vDiameter, vDiameter, 180, 90);
+    vInner.AddArc(vRight - vDiameter, vTop, vDiameter, vDiameter, 270, 90);
+    vInner.AddArc(vRight - vDiameter, vBottom - vDiameter, vDiameter, vDiameter, 0, 90);
+    vInner.AddArc(vLeft, vBottom - vDiameter, vDiameter, vDiameter, 90, 90);
+    vInner.CloseFigure;
+    vRegion := TGPRegion.Create(vOuter);
+    try
+      vRegion.Exclude(vInner);
+      vGraphics.FillRegion(vBrush, vRegion);
+    finally
+      vRegion.Free;
+    end;
+    vGraphics.DrawPath(vPen, vInner);
+  finally
+    vPen.Free;
+    vBrush.Free;
+    vInner.Free;
+    vOuter.Free;
     vGraphics.Free;
   end;
 end;
