@@ -978,6 +978,7 @@ begin
       vCount := Length(vCurrent) - 1;
       while (vCount > 1) and (ACanvas.TextWidth(Copy(vCurrent, 1, vCount)) > AWidth) do
         Dec(vCount);
+      vCount := Max(vCount, 1);
       Result := Result + [Copy(vCurrent, 1, vCount)];
       Delete(vCurrent, 1, vCount);
     end;
